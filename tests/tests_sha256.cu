@@ -28,8 +28,8 @@ TestVector test_vectors[] = {
 #define NUM_TESTS (sizeof(test_vectors)/sizeof(TestVector))
 
 /* Simple kernel that computes SHA-256 of a single block */
-__global__ void single_test_sha256_kernel(const uint8_t* input, uint8_t* output) {
-    sha256_single_block(input, output);
+__global__ void single_test_sha256_kernel(const uint8_t* input, uint8_t* output, bool window) {
+    sha256_single_block(input, output, window);
 }
 
 /* Utility function that converts a 32-byte hash to a hexadecimal string */
@@ -49,7 +49,7 @@ __host__ void print_result(const char* msg, const char* expected, const char* ac
 }
 
 /* Function that runs a single SHA-256 test */
-bool run_single_block_test(const char* msg, const char* expected, bool print) {
+bool run_single_block_test(const char* msg, const char* expected, bool print, bool window) {
     size_t len = strlen(msg);
 
     uint8_t h_block[64];
@@ -60,7 +60,7 @@ bool run_single_block_test(const char* msg, const char* expected, bool print) {
     cudaMalloc(&d_output, 32);
     cudaMemcpy(d_input, h_block, 64, cudaMemcpyHostToDevice);
 
-    single_test_sha256_kernel<<<1,1>>>(d_input, d_output);
+    single_test_sha256_kernel<<<1,1>>>(d_input, d_output, window);
     cudaDeviceSynchronize();
 
     uint8_t h_hash[32];
@@ -78,21 +78,21 @@ bool run_single_block_test(const char* msg, const char* expected, bool print) {
     return strcmp(expected, actual) == 0;
 }
 
-void run_all_test_vectors(){
+void run_all_test_vectors(bool window){
     for (int t = 0; t < NUM_TESTS; t++) {
-        run_single_block_test(test_vectors[t].msg, test_vectors[t].expected, true);
+        run_single_block_test(test_vectors[t].msg, test_vectors[t].expected, true, window);
     }
 }
 
 /* Function that tests consistency of SHA-256 for repeated hashing */
-void run_consistency_test() {
+void run_consistency_test(bool window) {
     for (int t = 0; t < NUM_TESTS; t++) {
         const char* msg = test_vectors[t].msg;
         const char* expected = test_vectors[t].expected;
         bool all_pass = true;
 
         for (int repeat = 0; repeat < 5; repeat++) {
-            bool pass = run_single_block_test(msg, expected, false);
+            bool pass = run_single_block_test(msg, expected, false, window);
             if (!pass) {
                 all_pass = false; // segna che c'è stato un fallimento
             }
@@ -109,9 +109,13 @@ void run_consistency_test() {
 }
 
 int main() {
-    std::cout << "================ Single Block SHA-256 Tests ================\n";
-    run_all_test_vectors();
-    std::cout << "\n================ Consistency Test ================\n";
-    run_consistency_test();
+    std::cout << "================ Single Block SHA-256 Tests (traditional transform) ================\n";
+    run_all_test_vectors(false);
+    std::cout << "================ Single Block SHA-256 Tests (windowed transform) ================\n";
+    run_all_test_vectors(true);
+    std::cout << "\n================ Consistency Test (traditional transform) ================\n";
+    run_consistency_test(false);
+    std::cout << "\n================ Consistency Test (windowed transform) ================\n";
+    run_consistency_test(true);
     return 0;
 }

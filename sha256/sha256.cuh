@@ -18,10 +18,15 @@
 __host__ void sha256_pad_single_block(const uint8_t* msg, size_t len, uint8_t block[64]);
 
 /* 
- * This function computes the SHA-256 hash of a single block of data. 
- * The function does not handle messages longer than 64 bytes and 
- * does not perform padding (this is handled from the host side if needed).
- */
-__device__ void sha256_single_block(const uint8_t input[SHA256_INPUT_BLOCK_SIZE], uint8_t output[SHA256_OUTPUT_BLOCK_SIZE]);
+* This function computes the SHA-256 hash of a single block of data. 
+* The function does not handle messages longer than 64 bytes and 
+* does not perform padding (this is handled from the host side if needed).
+* 
+* Parameters:
+*  - 'input': input data of 64 byte.
+*  - 'output': sha256 digest of 32 byte.
+*  - 'window': true -> windowed trasform, false -> traditional transform
+*/
+__device__ void sha256_single_block(const uint8_t input[SHA256_INPUT_BLOCK_SIZE], uint8_t output[SHA256_OUTPUT_BLOCK_SIZE], bool window);
 
 #endif // SHA256_H

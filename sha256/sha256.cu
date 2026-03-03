@@ -121,13 +121,14 @@ __device__ void sha256_init(CUDA_SHA256_CTX *ctx) {
 	ctx->hash[7] = 0x5be0cd19;
 }
 
-/* This function implements the so-called 'compression function' in the literature. This function 
- is executed for the only 512 bit block. 
- 
- Parameters:
-  - 'ctx': pointer to the sha context.
-  - 'data': read-only pointer to the data.
- */
+/* 
+* This function implements the so-called 'compression function' in the literature. This function 
+* is executed for the only 512 bit block. 
+* 
+* Parameters:
+*  - 'ctx': pointer to the sha context.
+*  - 'data': read-only pointer to the data.
+*/
 __device__  __forceinline__ void sha256_transform(CUDA_SHA256_CTX *ctx, const uint8_t data[]) {
 	
     uint32_t a, b, c, d, e, f, g, h, i, j, t1, t2, m[64];
@@ -173,15 +174,91 @@ __device__  __forceinline__ void sha256_transform(CUDA_SHA256_CTX *ctx, const ui
 }
 
 /* 
- * This function computes the SHA-256 hash of a single block of data. 
- * The function does not handle messages longer than 64 bytes and 
- * does not perform padding (this is handled from the host side if needed).
- */
-__device__ void sha256_single_block(const uint8_t input[SHA256_INPUT_BLOCK_SIZE], uint8_t output[SHA256_OUTPUT_BLOCK_SIZE]) {
+* This function implements the so-called 'compression function' in the literature. This 
+* function is executed for the only 512 bit block. 
+*
+* Instead of storing the full 64-word message schedule, this version uses a
+* 16-word "window" because computing W[i] depends only on the previous 16 words 
+* (i.e i-2, i-7, i-15, i-16). Compared to the traditional 'transform', this
+* implementation reduces per-thread memory usage (only) for the message schedule by 75%.
+*
+* Parameters:
+*  - 'ctx': pointer to the sha context.
+*  - 'data': read-only pointer to the data.
+*/
+__device__  __forceinline__ void sha256_transform_windowed(CUDA_SHA256_CTX *ctx, const uint8_t data[]) {
+	
+    uint32_t a, b, c, d, e, f, g, h, i, j, t1, t2;
+	uint32_t m[16]; // messagge schedule
+
+    a = ctx->hash[0];
+	b = ctx->hash[1];
+	c = ctx->hash[2];
+	d = ctx->hash[3];
+	e = ctx->hash[4];
+	f = ctx->hash[5];
+	g = ctx->hash[6];
+	h = ctx->hash[7];
+
+    /* Compression loop */
+    for (int i = 0; i < 64; i++) {
+
+        int idx = i & 15;  // index modulo 16
+
+        // Computing message schedule
+        if (i < 16) {
+            // First 16 words directly from data.
+            int j = i * 4;
+            m[idx] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | (data[j + 3]);
+        } else {
+            // For i >= 16: rolling update.
+            m[idx] = Small_sigma1(m[(i - 2) & 15])
+                   + m[(i - 7) & 15]
+                   + Small_sigma0(m[(i - 15) & 15])
+                   + m[(i - 16) & 15];
+        }
+
+        // Compression function
+        uint32_t t1 = h + Big_sigma1(e) + Ch(e, f, g) + k[i] + m[idx];
+        uint32_t t2 = Big_sigma0(a) + Maj(a, b, c);
+		h = g;
+		g = f;
+		f = e;
+		e = d + t1;
+		d = c;
+		c = b;
+		b = a;
+		a = t1 + t2;
+	}
+
+	ctx->hash[0] += a;
+	ctx->hash[1] += b;
+	ctx->hash[2] += c;
+	ctx->hash[3] += d;
+	ctx->hash[4] += e;
+	ctx->hash[5] += f;
+	ctx->hash[6] += g;
+	ctx->hash[7] += h;
+}
+
+/* 
+* This function computes the SHA-256 hash of a single block of data. 
+* The function does not handle messages longer than 64 bytes and 
+* does not perform padding (this is handled from the host side if needed).
+* 
+* Parameters:
+*  - 'input': input data of 64 byte.
+*  - 'output': sha256 digest of 32 byte.
+*  - 'window': true -> windowed trasform, false -> traditional transform
+*/
+__device__ void sha256_single_block(const uint8_t input[SHA256_INPUT_BLOCK_SIZE], uint8_t output[SHA256_OUTPUT_BLOCK_SIZE], bool window) {
 
     CUDA_SHA256_CTX ctx;
     sha256_init(&ctx);
-    sha256_transform(&ctx, input);
+	if(window)
+		sha256_transform_windowed(&ctx, input);
+	else
+    	sha256_transform(&ctx, input);
 
     /* Since GPU NVIDIA use little endian uint8_t ordering and SHA uses big endian,
 	 reverse all the uint8_ts when copying the final hash to the output hash. */
@@ -196,108 +273,3 @@ __device__ void sha256_single_block(const uint8_t input[SHA256_INPUT_BLOCK_SIZE]
         output[i+28]   = (ctx.hash[7] >> (24-i*8)) & 0xff;
     }
 }
-
-/* 
- * This function implement the so-called 'chunk-loop' in the literature. 
- *
- * This function insert the input data into the SHA-256 algorithm in a streaming fashion.
- * It buffers incoming bytes until 64 bytes (512 bits) are collected, then calls
- * the compression function (`consume_chunk`) to process that chunk. 
- 
-__device__ void cuda_sha256_update(CUDA_SHA256_CTX *ctx, const uint8_t data[], size_t len) {
-	
-	for (uint32_t i = 0; i < len; i++) {
-		ctx->data[ctx->datalen] = data[i];
-		ctx->datalen++;
-		if (ctx->datalen == 64) {
-			consume_chunk(ctx, ctx->data);
-			ctx->bitlen += 512;
-			ctx->datalen = 0;
-		}
-	}
-}
-
- This function completes the SHA-256 hash calculation for the last chunk of the messagge.
- * It performs the final padding of the remaining data in the buffer, appends the total length
- * of the message in bits, and transforms the final chunk to produce the 32-byte hash. 
-__device__ void cuda_sha256_final(CUDA_SHA256_CTX *ctx, uint8_t hash[]) {
-
-	uint32_t i = ctx->datalen;
-
-	// Pad whatever data is left in the buffer.
-	if (ctx->datalen < 56) {
-		ctx->data[i++] = 0x80;
-		while (i < 56)
-			ctx->data[i++] = 0x00;
-	}
-	else {
-		ctx->data[i++] = 0x80;
-		while (i < 64)
-			ctx->data[i++] = 0x00;
-		consume_chunk(ctx, ctx->data);
-		memset(ctx->data, 0, 56);
-	}
-
-	// Append to the padding the total message's length in bits and transform.
-	ctx->bitlen += ctx->datalen * 8;
-	ctx->data[63] = ctx->bitlen;
-	ctx->data[62] = ctx->bitlen >> 8;
-	ctx->data[61] = ctx->bitlen >> 16;
-	ctx->data[60] = ctx->bitlen >> 24;
-	ctx->data[59] = ctx->bitlen >> 32;
-	ctx->data[58] = ctx->bitlen >> 40;
-	ctx->data[57] = ctx->bitlen >> 48;
-	ctx->data[56] = ctx->bitlen >> 56;
-	consume_chunk(ctx, ctx->data);
-
-	/* Since GPU NVIDIA use little endian uint8_t ordering and SHA uses big endian,
-	 reverse all the uint8_ts when copying the final hash to the output hash. 
-	for (i = 0; i < 4; i++) {
-		hash[i]      = (ctx->hash[0] >> (24 - i * 8)) & 0x000000ff;
-		hash[i + 4]  = (ctx->hash[1] >> (24 - i * 8)) & 0x000000ff;
-		hash[i + 8]  = (ctx->hash[2] >> (24 - i * 8)) & 0x000000ff;
-		hash[i + 12] = (ctx->hash[3] >> (24 - i * 8)) & 0x000000ff;
-		hash[i + 16] = (ctx->hash[4] >> (24 - i * 8)) & 0x000000ff;
-		hash[i + 20] = (ctx->hash[5] >> (24 - i * 8)) & 0x000000ff;
-		hash[i + 24] = (ctx->hash[6] >> (24 - i * 8)) & 0x000000ff;
-		hash[i + 28] = (ctx->hash[7] >> (24 - i * 8)) & 0x000000ff;
-	}
-}
-
-__global__ void kernel_sha256_hash(uint8_t* indata, uint32_t inlen, uint8_t* outdata, uint32_t n_batch) {
-	uint32_t thread = blockIdx.x * blockDim.x + threadIdx.x;
-	if (thread >= n_batch)
-	{
-		return;
-	}
-	uint8_t* in = indata  + thread * inlen;
-	uint8_t* out = outdata  + thread * SHA256_BLOCK_SIZE;
-	CUDA_SHA256_CTX ctx;
-	cuda_sha256_init(&ctx);
-	cuda_sha256_update(&ctx, in, inlen);
-	cuda_sha256_final(&ctx, out);
-}
-
-extern "C"
-{
-void mcm_cuda_sha256_hash_batch(uint8_t* in, uint32_t inlen, uint8_t* out, uint32_t n_batch) {
-	uint8_t *cuda_indata;
-	uint8_t *cuda_outdata;
-	cudaMalloc(&cuda_indata, inlen * n_batch);
-	cudaMalloc(&cuda_outdata, SHA256_BLOCK_SIZE * n_batch);
-	cudaMemcpy(cuda_indata, in, inlen * n_batch, cudaMemcpyHostToDevice);
-
-	uint32_t thread = 256;
-	uint32_t block = (n_batch + thread - 1) / thread;
-
-	kernel_sha256_hash << < block, thread >> > (cuda_indata, inlen, cuda_outdata, n_batch);
-	cudaMemcpy(out, cuda_outdata, SHA256_BLOCK_SIZE * n_batch, cudaMemcpyDeviceToHost);
-	cudaDeviceSynchronize();
-	cudaError_t error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		printf("Error cuda sha256 hash: %s \n", cudaGetErrorString(error));
-	}
-	cudaFree(cuda_indata);
-	cudaFree(cuda_outdata);
-}
-}*/
