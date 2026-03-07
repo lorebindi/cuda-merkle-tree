@@ -1,7 +1,7 @@
 #include <iostream>
 #include <memory.h>
 #include <stdint.h>
-#include "sha256.cuh"
+#include "sha256_GPU.cuh"
 
 typedef struct {
     uint32_t hash[8]; // internal state, initialized with initial value of sha256

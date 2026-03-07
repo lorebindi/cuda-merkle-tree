@@ -1,5 +1,5 @@
-#ifndef SHA256_H
-#define SHA256_H
+#ifndef SHA256_GPU_H
+#define SHA256_GPU_H
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -29,4 +29,4 @@ __host__ void sha256_pad_single_block(const uint8_t* msg, size_t len, uint8_t bl
 */
 __device__ void sha256_single_block(const uint8_t input[SHA256_INPUT_BLOCK_SIZE], uint8_t output[SHA256_OUTPUT_BLOCK_SIZE], bool window);
 
-#endif // SHA256_H
+#endif // SHA256_GPU_H

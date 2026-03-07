@@ -1,36 +1,50 @@
+# ---------------- Compiler and flags ----------------
 NVXX            = nvcc
-NVXXFLAGS       = -std=c++17 -Isha256
+NVXXFLAGS       = -std=c++17 -Isha256 -Idata -Imerkle
 NVOPTFLAGS      = -w -O3 --gpu-architecture=compute_80 --gpu-code=sm_80
 RDCFLAGS        = -rdc=true
-
-# ---------------- Targets ----------------
-TARGETS         = main tests_sha256
+DEFINES_TEST    = -DMERKLE_TEST
 
 # ---------------- Source files ----------------
-SRC_MAIN        = main.cu sha256/sha256.cu
-OBJ_MAIN        = main.o sha256/sha256.o
+SRC_MAIN_CU     = main.cu sha256/sha256.cu merkle/naive_solution.cu
+SRC_MAIN_CPP    = data/data_generator.cpp sha256/sha256_CPU.cpp
 
-SRC_TEST        = tests/tests_sha256.cu sha256/sha256.cu
-OBJ_TEST        = tests/tests_sha256.o sha256/sha256.o
+SRC_TEST_CU     = tests/test_runner.cu sha256/sha256_GPU.cu merkle/naive_solution.cu
+SRC_TEST_CPP    = data/data_generator.cpp sha256/sha256_CPU.cpp
+
+OBJ_MAIN_CU     = $(SRC_MAIN_CU:.cu=.o)
+OBJ_MAIN_CPP    = $(SRC_MAIN_CPP:.cpp=.o)
+OBJ_TEST_CU     = $(SRC_TEST_CU:.cu=.o)
+OBJ_TEST_CPP    = $(SRC_TEST_CPP:.cpp=.o)
+
+# ---------------- Targets ----------------
+TARGET_MAIN     = main
+TARGET_TEST     = test_runner
 
 # ---------------- Default ----------------
 .DEFAULT_GOAL := all
-.PHONY: all clean
+.PHONY: all clean test
 
-all: $(TARGETS)
+all: $(TARGET_MAIN) $(TARGET_TEST)
 
 # ---------------- Build main executable ----------------
-main: $(OBJ_MAIN)
+$(TARGET_MAIN): $(OBJ_MAIN_CU) $(OBJ_MAIN_CPP)
 	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) $^ -o $@
 
 # ---------------- Build test executable ----------------
-tests_sha256: $(OBJ_TEST)
-	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) $^ -o $@
+$(TARGET_TEST): $(OBJ_TEST_CU) $(OBJ_TEST_CPP)
+	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) $(DEFINES_TEST) $^ -o $@
 
-# ---------------- Compile .cu -> .o ----------------
+# ---------------- Compile rules ----------------
 %.o: %.cu
-	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) -dc $< -o $@
+	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) $(DEFINES_TEST) -dc $< -o $@
+
+%.o: %.cpp
+	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(DEFINES_TEST) -c $< -o $@
+
+# ---------------- Target test ----------------
+test: $(TARGET_TEST)
 
 # ---------------- Clean ----------------
 clean:
-	rm -f main.o sha256/sha256.o test_sha256.o $(TARGETS)
+	rm -f $(OBJ_MAIN_CU) $(OBJ_MAIN_CPP) $(OBJ_TEST_CU) $(OBJ_TEST_CPP) $(TARGET_MAIN) $(TARGET_TEST)

@@ -2,9 +2,9 @@
 #include <cstring>
 #include <stdint.h>
 
-#include "sha256/sha256.cuh"
+#include "merkle/naive_solution.cuh"
 
 int main(int argc, char **argv){ 
-
+    
 
 }
