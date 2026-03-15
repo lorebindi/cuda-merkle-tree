@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include "../sha256/sha256_GPU.cuh"
 #include "../sha256/sha256_CPU.hpp"
+#include "../merkle/utils.cuh"
 #include "../merkle/naive_solution.cuh"
 #include "../data/data_generator.hpp"
 
@@ -215,8 +216,9 @@ int main() {
     cout << "\n================ Consistency Test (windowed transform) ================\n";
     run_consistency_test(true);
     cout << "\n================ Testing naive Merkle tree build ================\n" << endl;
-    test_naive_solution(11, true);
+    test_naive_solution(50000, true);
 
     cudaDeviceReset();
+
     return 0;
 }

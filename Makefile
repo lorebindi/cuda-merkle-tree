@@ -9,7 +9,7 @@ DEFINES_TEST    = -DMERKLE_TEST
 SRC_MAIN_CU     = main.cu sha256/sha256.cu merkle/naive_solution.cu
 SRC_MAIN_CPP    = data/data_generator.cpp sha256/sha256_CPU.cpp
 
-SRC_TEST_CU     = tests/test_runner.cu sha256/sha256_GPU.cu merkle/naive_solution.cu
+SRC_TEST_CU     = tests/test_runner.cu sha256/sha256_GPU.cu merkle/naive_solution.cu merkle/utils.cu
 SRC_TEST_CPP    = data/data_generator.cpp sha256/sha256_CPU.cpp
 
 OBJ_MAIN_CU     = $(SRC_MAIN_CU:.cu=.o)

@@ -1,15 +1,6 @@
 #include <cstdint>
 
 /*
-* Computes and return the total number of nodes required to store a complete Merkle tree
-* in a contiguous array representation (heap-like layout), given the number of leaf nodes.
-*
-* Parameters:
-*  - n_leaf: number of leaf nodes in the Merkle tree.
-*/
-size_t compute_merkle_tree_size(size_t n_leaf);
-
-/*
  * Naive GPU implementation of Merkle tree construction.
  *
  * This function builds a Merkle tree starting from a set of input data blocks.

@@ -5,53 +5,12 @@
 
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
+#include "utils.cuh"
 #include "naive_solution.cuh"
 
 using namespace std;
 
 #define THREADS_PER_BLOCK 256
-
-inline void gpuAssert(cudaError_t code, const char *file, int line)
-{
-    if (code != cudaSuccess) {
-        std::cerr << "GPUassert code: " << cudaGetErrorString(code) << ", file: " << file << ", line: " << line << std::endl;
-        exit(code);
-    }
-}
-
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-
-inline uint64_t current_time_nsecs()
-{
-    struct timespec t;
-    clock_gettime(CLOCK_REALTIME, &t);
-    return (t.tv_sec)*1000000000L + t.tv_nsec;
-}
-
-/*
-* Kernel that builds the leaf level of the merkle tree starting from the input data.
-*
-* Parameters:
-*  - n: number of input blocks.
-*  - size_t leaf_offset:
-*  - data: pointer to a byte array. Each 64 contiguos positions (i.e bytes) 
-*          correspond to a single input block.
-*  - merkle_tree: pointer to a byte array. Each 32 contiguos positions (i.e bytes)
-*                 correspond to a single node of the Merkle Tree (stored like an heap).
-*/
-__global__ void leaf_level_build(int n, size_t leaf_offset, uint8_t *data, uint8_t *merkle_tree, bool sha256_windowed) {
-     
-    int i = (blockIdx.x * blockDim.x) + threadIdx.x;
-    
-    if (i >= n) return;
-
-    // Each data block is 64 byte.
-    uint8_t* input_data_block = data + (i*SHA256_INPUT_BLOCK_SIZE); 
-    // Each node is 32 byte.
-    uint8_t* output_hash = merkle_tree + ((leaf_offset + i) * SHA256_OUTPUT_BLOCK_SIZE);
-    // Hashing
-    sha256_single_block(input_data_block, output_hash, sha256_windowed);
-}
 
 /*
 * Kernel that builds the internal level of the merkle tree.
@@ -70,9 +29,9 @@ __global__ void leaf_level_build(int n, size_t leaf_offset, uint8_t *data, uint8
 *  - When a level contains an odd number of nodes, the last node is hashed
 *    with itself.
 */
-__global__ void internal_level_build(int parent_level_size, uint8_t *parents_level, int children_level_size, uint8_t *children_level, bool sha256_windowed) {
+__global__ void internal_level_build_naive(int parent_level_size, uint8_t *parents_level, int children_level_size, uint8_t *children_level, bool sha256_windowed) {
      
-    int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+    unsigned int i = (blockIdx.x * blockDim.x) + threadIdx.x;
     
     if (i >= parent_level_size) return;
 
@@ -89,27 +48,6 @@ __global__ void internal_level_build(int parent_level_size, uint8_t *parents_lev
     memcpy(concatenated+SHA256_OUTPUT_BLOCK_SIZE, right, SHA256_OUTPUT_BLOCK_SIZE);
 
     sha256_single_block(concatenated, parent, sha256_windowed);
-}
-
-/*
-* Computes and return the total number of nodes required to store a complete Merkle tree
-* in a contiguous array representation (heap-like layout), given the number of leaf nodes.
-*
-* If a level contains an odd number of nodes, the last parent node will have
-* only one child (i.e., the right child is missing). In typical Merkle tree
-* constructions this node is later hashed with itself when computing the parent.
-*
-* Parameters:
-*  - n_leaf: number of leaf nodes in the Merkle tree.
-*/
-size_t compute_merkle_tree_size(size_t n_leaf){
-    size_t size = 0;
-    while (n_leaf > 1) {     
-        size += n_leaf;
-        n_leaf = (n_leaf + 1) / 2;
-    }
-    size += 1;
-    return size;
 }
 
 /*
@@ -176,7 +114,7 @@ void build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t*
         uint8_t *dev_curr_parent_level = dev_merkle_tree + (parent_offset * SHA256_OUTPUT_BLOCK_SIZE);
         // computing internal level 
         int blocks_per_grid = (parent_level_size + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK; // rouding up
-        internal_level_build<<<blocks_per_grid, THREADS_PER_BLOCK>>>(parent_level_size, dev_curr_parent_level, children_level_size, dev_curr_children_level, sha256_windowed);
+        internal_level_build_naive<<<blocks_per_grid, THREADS_PER_BLOCK>>>(parent_level_size, dev_curr_parent_level, children_level_size, dev_curr_children_level, sha256_windowed);
         cudaDeviceSynchronize();
         
         // parents becomes children in the next iteration
