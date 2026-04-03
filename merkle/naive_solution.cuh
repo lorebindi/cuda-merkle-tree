@@ -20,4 +20,4 @@
  *                     If true, the windowed message schedule version is used;
  *                     otherwise the standard implementation is used.
  */
-void build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree, bool sha256_windowed=true);
+void build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree = nullptr, bool sha256_windowed=true);

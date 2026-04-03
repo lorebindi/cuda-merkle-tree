@@ -43,11 +43,8 @@ __global__ void internal_level_build_naive(int parent_level_size, uint8_t *paren
     bool is_last_odd = (children_level_size % 2 == 1) && (i == parent_level_size - 1);
     if (is_last_odd) right = left;
 
-    uint8_t concatenated[64];
-    memcpy(concatenated, left, SHA256_OUTPUT_BLOCK_SIZE);
-    memcpy(concatenated+SHA256_OUTPUT_BLOCK_SIZE, right, SHA256_OUTPUT_BLOCK_SIZE);
+    compute_parent_hash(parent, left, right, sha256_windowed);
 
-    sha256_single_block(concatenated, parent, sha256_windowed);
 }
 
 /*
@@ -74,7 +71,7 @@ void build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t*
 
 #ifndef MERKLE_TEST
     // allocation of the byte array of input data blocks.
-    uint8_t *host_data_bytes = generate_random_blocks(n_blocks);
+    host_data_bytes = generate_random_blocks(n_blocks);
 #endif
    
     //computing the merkle_tree dimension
