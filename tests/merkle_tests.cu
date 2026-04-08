@@ -15,8 +15,8 @@
 #include "../sha256/sha256_GPU.cuh"
 #include "../sha256/sha256_CPU.hpp"
 #include "../merkle/utils.cuh"
-#include "../merkle/naive_solution.cuh"
-#include "../merkle/shared_mem_solution.cuh"
+#include "../merkle/naive_solution_build.cuh"
+#include "../merkle/shared_mem_solution_build.cuh"
 #include "../data/data_generator.hpp"
 
 using namespace std;
@@ -51,7 +51,7 @@ void test_naive_solution(size_t n_blocks, bool sha256_windowed) {
     cout << "Merkle tree size: " << merkle_tree_size << "\n" << endl;
     uint8_t* host_merkle_tree = (uint8_t*) malloc(merkle_tree_size * SHA256_OUTPUT_BLOCK_SIZE);
     // build the merkle tree on the GPU
-    build_merkle_tree_naive(n_blocks, host_data, host_merkle_tree);
+    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data, host_merkle_tree);
 
     cout << "GPU Merkle Tree computed. \n" << endl;
 
@@ -111,6 +111,8 @@ void test_naive_solution(size_t n_blocks, bool sha256_windowed) {
 
     free(host_merkle_tree);
     free(prec_lev);
+
+    merkle_tree_gpu_destroy(merkle_tree_gpu);
 
     return;
 }
@@ -221,7 +223,7 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
     cout << "Merkle tree size: " << merkle_tree_size << "\n" << endl;
     uint8_t* host_merkle_tree = (uint8_t*) malloc(merkle_tree_size * SHA256_OUTPUT_BLOCK_SIZE);
     // build the merkle tree on the GPU
-    build_merkle_tree_SMEM(n_blocks, host_data, host_merkle_tree, leaves_per_block);
+    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data, host_merkle_tree, leaves_per_block);
 
     cout << "GPU Merkle Tree computed. \n" << endl;
 
@@ -363,6 +365,7 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
 
     }
 
+    merkle_tree_gpu_destroy(merkle_tree_gpu);
     return outcome;    
 }
 

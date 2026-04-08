@@ -4,7 +4,8 @@
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
 #include "utils.cuh"
-#include "shared_mem_solution.cuh"
+#include "merkle_tree_gpu.cuh"
+#include "shared_mem_solution_build.cuh"
 
 #define THREADS_PER_BLOCK 256
 
@@ -287,22 +288,21 @@ __host__ size_t compute_top_band_offset(size_t base_band_offset, size_t base_ban
 *  - n_blocks: number of input data blocks (leaves)
 *  - host_data_bytes: pointer to input data (optional if generated internally)
 *  - host_merkle_tree: optional output buffer for the full Merkle tree 
-                       (used only when MERKLE_TEST is enabled).
+*                       (used only when MERKLE_TEST is enabled).
 *  - leaves_per_block: optional number of leaves processed per block, it must be power of 2
-                       (used only when MERKLE_TEST is enabled). 
+*                       (used only when MERKLE_TEST is enabled). 
 *  - sha256_windowed: selects the SHA-256 implementation variant
+*
+* Returns:
+*  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
+*    The structure contains the device pointer to the tree and its metadata. The caller
+*    is responsible for freeing it.
 */
-void build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree, int leaves_per_block, bool sha256_windowed){ 
-#ifndef MERKLE_TEST
-    // allocation of the byte array of input data blocks.
-    host_data_bytes = generate_random_blocks(n_blocks);
-    // computing number of leaves per block
-    leaves_per_block = compute_optimal_leaves_per_block(n_blocks, THREADS_PER_BLOCK);
-#endif
+MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree, int leaves_per_block, bool sha256_windowed){ 
 
     if (leaves_per_block <= 0 || ( (leaves_per_block & (leaves_per_block - 1)) != 0 )) {
         cout << "The parameter 'leaves_per_block' must be a power of two." << endl;
-        return;
+        return nullptr;
     }
    
     //computing the merkle_tree dimension
@@ -336,7 +336,6 @@ void build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* 
     size_t base_band_write_offset = leaf_offset - (n_blocks + 1)/2;
 
     // loop to build internal levels
-    int i = 1;
     while(base_band_size > 1){
 
         uint8_t *base_band = dev_merkle_tree + (base_band_offset * SHA256_OUTPUT_BLOCK_SIZE);
@@ -351,6 +350,7 @@ void build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* 
             while (effective_leaves_per_block < base_band_size)
                 effective_leaves_per_block <<= 1;
         }
+
         // compute the dimension of the SMEM that will be used
         size_t size_SMEM = (compute_merkle_tree_size(effective_leaves_per_block) - effective_leaves_per_block) * SHA256_OUTPUT_BLOCK_SIZE;
         // computing the band of the merkle tree through the kernel
@@ -364,7 +364,6 @@ void build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* 
         base_band_size = blocks_per_grid; // because each block produce a subtree, hence the new base band is the subtree roots level.
         base_band_offset = compute_top_band_offset(base_band_offset, old_base_band_size, effective_leaves_per_block);
         base_band_write_offset = base_band_offset - (base_band_size + 1) / 2;
-        i++;
     }
 
 #ifdef MERKLE_TEST
@@ -375,6 +374,7 @@ void build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* 
 
 #endif
 
-    // deallocate GPU merkle_tree
-    gpuErrchk(cudaFree(dev_merkle_tree));
+    // return the result
+    MerkleTreeGPU* result = merkle_tree_gpu_create(dev_merkle_tree, merkle_tree_size, n_blocks);
+    return result;
 }

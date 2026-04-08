@@ -1,4 +1,5 @@
 #include <cstdint>
+#include "merkle_tree_gpu.cuh"
 
 /*
  * Naive GPU implementation of Merkle tree construction.
@@ -19,5 +20,10 @@
  *  - sha256_windowed: selects the SHA256 implementation used during hashing.
  *                     If true, the windowed message schedule version is used;
  *                     otherwise the standard implementation is used.
+ *
+ * Returns:
+ *  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
+ *    The structure contains the device pointer to the tree and its metadata. The caller
+ *    is responsible for freeing it.
  */
-void build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree = nullptr, bool sha256_windowed=true);
+MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree = nullptr, bool sha256_windowed=true);

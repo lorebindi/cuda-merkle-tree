@@ -6,7 +6,8 @@
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
 #include "utils.cuh"
-#include "naive_solution.cuh"
+#include "merkle_tree_gpu.cuh"
+#include "naive_solution_build.cuh"
 
 using namespace std;
 
@@ -66,14 +67,14 @@ __global__ void internal_level_build_naive(int parent_level_size, uint8_t *paren
  *  - sha256_windowed: selects the SHA256 implementation used during hashing.
  *                     If true, the windowed message schedule version is used;
  *                     otherwise the standard implementation is used.
+ *
+ * Returns:
+ *  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
+ *    The structure contains the device pointer to the tree and its metadata. The caller
+ *    is responsible for freeing it.
  */
-void build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree, bool sha256_windowed){
-
-#ifndef MERKLE_TEST
-    // allocation of the byte array of input data blocks.
-    host_data_bytes = generate_random_blocks(n_blocks);
-#endif
-   
+MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree, bool sha256_windowed){
+ 
     //computing the merkle_tree dimension
     const size_t merkle_tree_size = compute_merkle_tree_size(n_blocks);
     size_t leaf_offset = merkle_tree_size - n_blocks;
@@ -127,7 +128,8 @@ void build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t*
 
 #endif
 
-    // deallocate GPU merkle_tree
-    gpuErrchk(cudaFree(dev_merkle_tree));
+    // return the result
+    MerkleTreeGPU* result = merkle_tree_gpu_create(dev_merkle_tree, merkle_tree_size, n_blocks);
+    return result;
 
 }
