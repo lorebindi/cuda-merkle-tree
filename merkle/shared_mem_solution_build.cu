@@ -7,7 +7,9 @@
 #include "merkle_tree.cuh"
 #include "shared_mem_solution_build.cuh"
 
-#define THREADS_PER_BLOCK 256
+using namespace std;
+
+
 
 /*
 * GPU Ampere 100 (from cudaGetDeviceProp): 

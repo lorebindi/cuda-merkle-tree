@@ -12,6 +12,8 @@
 #include "../merkle/utils.cuh"
 #include "../data/data_generator.hpp"
 
+using namespace std;
+
 #define CUDA_CHECK(call) { cudaError_t e = call; if(e != cudaSuccess) { \
         cerr << "CUDA error: " << cudaGetErrorString(e) << " at line " << __LINE__ << "\n"; exit(1); }}
 

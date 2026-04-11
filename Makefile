@@ -12,7 +12,7 @@ SRC_MAIN_CPP    = data/data_generator.cpp sha256/sha256_CPU.cpp
 SRC_SHA256_TEST_CU  = tests/sha256_tests.cu sha256/sha256_GPU.cu merkle/utils.cu
 SRC_SHA256_TEST_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp
 
-SRC_MERKLE_TEST_CU  = tests/merkle_tests.cu merkle/naive_solution_build.cu merkle/shared_mem_solution_build.cu merkle/utils.cu sha256/sha256_GPU.cu
+SRC_MERKLE_TEST_CU  = tests/merkle_tests.cu merkle/naive_solution_build.cu merkle/shared_mem_solution_build.cu merkle/merkle_proof.cu merkle/utils.cu sha256/sha256_GPU.cu
 SRC_MERKLE_TEST_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp merkle/merkle_tree_cpu.cpp
 
 OBJ_MAIN_CU         = $(SRC_MAIN_CU:.cu=.o)

@@ -15,9 +15,12 @@
 #include "../merkle/naive_solution_build.cuh"
 #include "../merkle/shared_mem_solution_build.cuh"
 #include "../merkle/merkle_tree_cpu.hpp"
+#include "../merkle/merkle_proof.cuh"
 #include "../data/data_generator.hpp"
 
 using namespace std;
+
+#define THREADS_PER_BLOCK 256
 
 enum MerkleTestMode {
     ROOT_ONLY,
@@ -37,7 +40,7 @@ enum MerkleTestMode {
  * 
  * Reports mismatches if any, otherwise confirms all leaf hashes and root match.
  */
-void test_naive_solution(size_t n_blocks, bool sha256_windowed) {
+bool test_naive_solution(size_t n_blocks, bool sha256_windowed) {
     // generate bytes of data.
     cout << "Data blocks (leaves) number: " << n_blocks << "\n" << endl;
     uint8_t* host_data = generate_random_blocks(n_blocks);
@@ -75,6 +78,11 @@ void test_naive_solution(size_t n_blocks, bool sha256_windowed) {
         cout << "All leaf hashes match CPU calculation! \n" << endl;
     } else {
         cout << "Some leaf hashes mismatch!" << endl;
+        free(host_data);
+        free(curr_lev);
+        free(host_merkle_tree);
+        merkle_tree_gpu_destroy(merkle_tree_gpu);
+        return false;
     }
 
     free(host_data);
@@ -106,16 +114,24 @@ void test_naive_solution(size_t n_blocks, bool sha256_windowed) {
         prec_lev_size = curr_lev_size;
     }
 
+    bool outcome = false;
+
     // compare
-    if (memcmp(prec_lev, host_merkle_tree, SHA256_OUTPUT_BLOCK_SIZE) != 0) cout << "Roots mismatch" << endl;
-    else cout << "Roots MATCH\n" << endl;
+    if (memcmp(prec_lev, host_merkle_tree, SHA256_OUTPUT_BLOCK_SIZE) != 0){
+        cout << "Roots mismatch" << endl;
+        outcome = false;
+    } 
+    else{
+        cout << "Roots MATCH\n" << endl;
+        outcome = true;
+    } 
 
     free(host_merkle_tree);
     free(prec_lev);
 
     merkle_tree_gpu_destroy(merkle_tree_gpu);
 
-    return;
+    return outcome;
 }
 
 bool run_all_merkle_tests_naive(bool sha256_windowed) {
@@ -126,7 +142,9 @@ bool run_all_merkle_tests_naive(bool sha256_windowed) {
     auto run_test = [&](size_t n_blocks, const string& desc) {
         cout << "\n[TEST] " << desc << " n_blocks = " << n_blocks << "\n";
         try {
-            test_naive_solution(n_blocks, sha256_windowed);
+            bool passed = test_naive_solution(n_blocks, sha256_windowed);
+            if (!passed)
+                failed_tests.push_back(desc + " (n_blocks=" + to_string(n_blocks) + ")");
         } catch (...) {
             cout << "Test failed due to an exception!\n";
             failed_tests.push_back(desc + " (n_blocks=" + to_string(n_blocks) + ")");
@@ -386,20 +404,136 @@ bool run_all_merkle_tests_SMEM(MerkleTestMode mode_small_size) {
     
 }
 
+bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool smem, bool sha256_windowed){
+
+    uint8_t* host_data_blocks = generate_random_blocks(n_blocks);
+    ProofBatch* proof_batch = generate_proof_requests(host_data_blocks, n_blocks, n_proofs, tamper_rate);
+    
+    // building the merkle tree
+    int leaves_per_block = 0;
+    MerkleTreeGPU* merkle_tree_gpu = NULL;
+
+    if(smem) {
+        leaves_per_block = compute_optimal_leaves_per_block(n_blocks, THREADS_PER_BLOCK);
+        merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data_blocks, leaves_per_block, sha256_windowed);
+    }
+    else{
+        merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data_blocks, sha256_windowed);
+    }
+
+    bool* result = compute_merkle_proofs (proof_batch, merkle_tree_gpu, sha256_windowed);
+
+    bool outcome = false;
+
+    if(memcmp(proof_batch->expected, result, sizeof(bool) * n_proofs) == 0){
+        cout << "Merkle proof computed correctly" << endl;
+        outcome = true;
+    }
+    else{
+        cout << "Some mistakes in the computed merkle proof." << endl;
+        outcome = false;
+    }
+
+    free(host_data_blocks);
+    free(result);
+    free_proof_batch(proof_batch);
+    merkle_tree_gpu_destroy(merkle_tree_gpu);
+
+    return outcome;
+    
+}
+
+bool run_all_merkle_proof_tests(bool smem, bool sha256_windowed) {
+    cout << "\n================ MERKLE PROOF TEST SUITE ================\n";
+    vector<string> failed_tests;
+
+    auto run_test = [&](size_t n_blocks, size_t n_proofs, float tamper_rate, const string& desc) {
+        cout << "\n[TEST] " << desc
+             << " | n_blocks=" << n_blocks
+             << " | n_proofs=" << n_proofs
+             << " | tamper_rate=" << tamper_rate << "\n";
+        bool passed = test_merkle_proof(n_blocks, n_proofs, tamper_rate, smem, sha256_windowed);
+        if (!passed)
+            failed_tests.push_back(desc + " (n_blocks=" + to_string(n_blocks) +
+                                   ", n_proofs=" + to_string(n_proofs) + ")");
+    };
+
+    auto rand_tamper = [&]() { return (float)(rand() % 101) / 100.0f; };
+
+    // --- EDGE CASES ---
+    run_test(1,  1,  0.0f, "Single block, single proof, no tamper");
+    run_test(1,  1,  1.0f, "Single block, single proof, all tamper");
+    run_test(2,  2,  0.0f, "Two blocks, all valid");
+    run_test(2,  2,  1.0f, "Two blocks, all tampered");
+
+    // --- n_proofs < n_blocks ---
+    vector<size_t> small_blocks = {5, 13, 17, 32, 64};
+    for (auto n : small_blocks) {
+        size_t n_proofs = max((size_t)1, n / 2);
+        run_test(n, n_proofs, rand_tamper(), "n_proofs < n_blocks");
+    }
+
+    // --- n_proofs == n_blocks ---
+    vector<size_t> medium_blocks = {8, 16, 31, 33, 100};
+    for (auto n : medium_blocks)
+        run_test(n, n, rand_tamper(), "n_proofs == n_blocks");
+
+       
+    // --- n_proofs > n_blocks ---
+    vector<size_t> large_blocks = {10, 50, 128, 257, 1000};
+    for (auto n : large_blocks) {
+        size_t n_proofs = n * 3;
+        run_test(n, n_proofs, rand_tamper(), "n_proofs > n_blocks");
+    }
+
+    // --- MIXED TAMPER RATE ---
+    vector<size_t> mixed_blocks = {500, 1000, 5000, 10000};
+    for (auto n : mixed_blocks)
+        run_test(n, n * 2, 0.5f, "Mixed tamper rate (50%)");
+
+    // --- POWER OF TWO EDGE ---
+    vector<size_t> pow2 = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+    for (auto n : pow2)
+        run_test(n, n, rand_tamper(), "Power-of-two n_blocks");
+
+    // --- RANDOM STRESS ---
+    for (int i = 0; i < 10; i++) {
+        size_t n_blocks = rand() % 2000 + 1;
+        size_t n_proofs = rand() % (n_blocks * 2) + 1;
+        run_test(n_blocks, n_proofs, rand_tamper(), "Random stress test");
+    }
+
+    // --- SUMMARY ---
+    cout << "\n================ MERKLE PROOF TEST SUMMARY ================\n";
+    if (failed_tests.empty()) {
+        cout << "All tests passed!\n";
+        cout << "================ END MERKLE PROOF TESTS ================\n";
+        return true;
+    } else {
+        cout << "Some tests failed:\n";
+        for (auto& s : failed_tests) cout << "- " << s << "\n";
+        cout << "================ END MERKLE PROOF TESTS ================\n";
+        return false;
+    }
+}
+
 int main() {
     srand(time(NULL));
 
-    bool outcome = false;
+    const bool sha256_windowed = true;
+    const bool use_smem = true;
     
     // merkle tree building tests naive solution
-    bool outcome1 = run_all_merkle_tests_naive(true);
+    bool outcome1 = run_all_merkle_tests_naive(sha256_windowed);
     
     // merkle tree building tests SMEM solution
-    bool outcome2 = run_all_merkle_tests_SMEM(FULL_TREE);
+    bool outcome2 = run_all_merkle_tests_SMEM(ROOT_ONLY);
+
+    bool outcome3 = run_all_merkle_proof_tests(use_smem, sha256_windowed);
 
     cout << "\n\n#####################################################################\n\n";
     cout << "================ MERKLE TESTS SUMMARY ====================\n";
-    if(outcome1 && outcome2) {
+    if(outcome1 && outcome2 && outcome3) {
         cout << "All tests PASSED!\n";
     }
     else{

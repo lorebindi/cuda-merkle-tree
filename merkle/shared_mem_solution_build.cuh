@@ -2,6 +2,20 @@
 #include "merkle_tree.cuh"
 
 /*
+* Determines the optimal leaves_per_block for the internal_level_build_SMEM kernel
+* by evaluating occupancy. It tests power-of-two candidates, computes required
+* shared memory, and selects the configuration that maximizes active blocks per SM.
+*
+* Parameters:
+* - input_level_size: number of nodes in the current level.
+* - threads_per_block: number of threads for each block.
+*
+* Returns:
+* - optimal leaves_per_block (power of two)
+*/
+__host__ int compute_optimal_leaves_per_block(int input_level_size, int threads_per_block);
+
+/*
 * Builds a Merkle tree on the GPU using a shared memory (SMEM) optimized approach.
 *
 * The function first computes the leaf level from input data, then iteratively

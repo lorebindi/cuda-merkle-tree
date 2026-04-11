@@ -5,6 +5,8 @@
 #include <cstdint>
 #include "../sha256/sha256_GPU.cuh"
 
+#define THREADS_PER_BLOCK 256
+
 /*
  * Error checking helper for CUDA calls.
  *
@@ -80,6 +82,30 @@ __device__ __forceinline__ void compute_parent_hash(uint8_t* parent, uint8_t* le
     memcpy(concatenated+SHA256_OUTPUT_BLOCK_SIZE, right, SHA256_OUTPUT_BLOCK_SIZE);
 
     sha256_single_block(concatenated, parent, sha256_windowed);
+}
+
+/*
+ * Device-side comparison of two SHA-256 hashes (32 bytes)
+ *
+ * This function replaces memcmp in device code, which is not available in CUDA kernels.
+ * It compares two 32-byte buffers by reinterpreting them as two uint4 (128-bit) blocks,
+ * enabling vectorized comparisons for better performance on GPU memory transactions.
+ *
+ * Assumes:
+ *  - Inputs are 16-byte aligned (safe if allocated via cudaMalloc, otherwise __align__(16))
+ *  - Each buffer has exactly 32 bytes (e.g., SHA-256 output)
+ *
+ * Returns:
+ *  - true if the two hashes are identical
+ *  - false otherwise
+ */
+__device__ __forceinline__ bool device_memcmp32(const uint8_t* a, const uint8_t* b) {
+    const uint4* a128 = reinterpret_cast<const uint4*>(a);
+    const uint4* b128 = reinterpret_cast<const uint4*>(b);
+    return (a128[0].x == b128[0].x) && (a128[0].y == b128[0].y) &&
+           (a128[0].z == b128[0].z) && (a128[0].w == b128[0].w) &&
+           (a128[1].x == b128[1].x) && (a128[1].y == b128[1].y) &&
+           (a128[1].z == b128[1].z) && (a128[1].w == b128[1].w);
 }
 
 /*
