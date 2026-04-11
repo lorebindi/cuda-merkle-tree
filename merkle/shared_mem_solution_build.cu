@@ -4,7 +4,7 @@
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
 #include "utils.cuh"
-#include "merkle_tree_gpu.cuh"
+#include "merkle_tree.cuh"
 #include "shared_mem_solution_build.cuh"
 
 #define THREADS_PER_BLOCK 256
@@ -287,8 +287,6 @@ __host__ size_t compute_top_band_offset(size_t base_band_offset, size_t base_ban
 * Parameters:
 *  - n_blocks: number of input data blocks (leaves)
 *  - host_data_bytes: pointer to input data (optional if generated internally)
-*  - host_merkle_tree: optional output buffer for the full Merkle tree 
-*                       (used only when MERKLE_TEST is enabled).
 *  - leaves_per_block: optional number of leaves processed per block, it must be power of 2
 *                       (used only when MERKLE_TEST is enabled). 
 *  - sha256_windowed: selects the SHA-256 implementation variant
@@ -298,7 +296,7 @@ __host__ size_t compute_top_band_offset(size_t base_band_offset, size_t base_ban
 *    The structure contains the device pointer to the tree and its metadata. The caller
 *    is responsible for freeing it.
 */
-MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree, int leaves_per_block, bool sha256_windowed){ 
+MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, int leaves_per_block, bool sha256_windowed){ 
 
     if (leaves_per_block <= 0 || ( (leaves_per_block & (leaves_per_block - 1)) != 0 )) {
         cout << "The parameter 'leaves_per_block' must be a power of two." << endl;
@@ -365,14 +363,6 @@ MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes,
         base_band_offset = compute_top_band_offset(base_band_offset, old_base_band_size, effective_leaves_per_block);
         base_band_write_offset = base_band_offset - (base_band_size + 1) / 2;
     }
-
-#ifdef MERKLE_TEST
-    
-    if(host_merkle_tree != nullptr)
-        gpuErrchk(cudaMemcpy(host_merkle_tree, dev_merkle_tree,(merkle_tree_size)*SHA256_OUTPUT_BLOCK_SIZE,
-            cudaMemcpyDeviceToHost));
-
-#endif
 
     // return the result
     MerkleTreeGPU* result = merkle_tree_gpu_create(dev_merkle_tree, merkle_tree_size, n_blocks);

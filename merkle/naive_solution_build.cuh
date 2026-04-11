@@ -1,5 +1,5 @@
 #include <cstdint>
-#include "merkle_tree_gpu.cuh"
+#include "merkle_tree.cuh"
 
 /*
  * Naive GPU implementation of Merkle tree construction.
@@ -15,8 +15,6 @@
  * Parameters:
  *  - n_blocks: number of input data blocks (i.e., number of leaves).
  *  - host_data_bytes: pointer to the host array containing the input blocks.
- *  - host_merkle_tree: optional host buffer where the computed tree is copied 
- *                      at the end (used only when MERKLE_TEST is enabled).
  *  - sha256_windowed: selects the SHA256 implementation used during hashing.
  *                     If true, the windowed message schedule version is used;
  *                     otherwise the standard implementation is used.
@@ -26,4 +24,4 @@
  *    The structure contains the device pointer to the tree and its metadata. The caller
  *    is responsible for freeing it.
  */
-MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree = nullptr, bool sha256_windowed=true);
+MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, bool sha256_windowed=true);

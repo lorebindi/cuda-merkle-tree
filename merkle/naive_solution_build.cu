@@ -6,7 +6,7 @@
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
 #include "utils.cuh"
-#include "merkle_tree_gpu.cuh"
+#include "merkle_tree.cuh"
 #include "naive_solution_build.cuh"
 
 using namespace std;
@@ -62,8 +62,6 @@ __global__ void internal_level_build_naive(int parent_level_size, uint8_t *paren
  * Parameters:
  *  - n_blocks: number of input data blocks (i.e., number of leaves).
  *  - host_data_bytes: pointer to the host array containing the input blocks.
- *  - host_merkle_tree: optional host buffer where the computed tree is copied 
- *                      at the end (used only when MERKLE_TEST is enabled).
  *  - sha256_windowed: selects the SHA256 implementation used during hashing.
  *                     If true, the windowed message schedule version is used;
  *                     otherwise the standard implementation is used.
@@ -73,7 +71,7 @@ __global__ void internal_level_build_naive(int parent_level_size, uint8_t *paren
  *    The structure contains the device pointer to the tree and its metadata. The caller
  *    is responsible for freeing it.
  */
-MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint8_t* host_merkle_tree, bool sha256_windowed){
+MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, bool sha256_windowed){
  
     //computing the merkle_tree dimension
     const size_t merkle_tree_size = compute_merkle_tree_size(n_blocks);
@@ -119,14 +117,6 @@ MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes
         children_level_size = parent_level_size;
         children_offset = parent_offset;
     }
-
-#ifdef MERKLE_TEST
-    
-    if(host_merkle_tree != nullptr)
-        gpuErrchk(cudaMemcpy(host_merkle_tree, dev_merkle_tree,(merkle_tree_size)*SHA256_OUTPUT_BLOCK_SIZE,
-            cudaMemcpyDeviceToHost));
-
-#endif
 
     // return the result
     MerkleTreeGPU* result = merkle_tree_gpu_create(dev_merkle_tree, merkle_tree_size, n_blocks);

@@ -1,5 +1,5 @@
 #include <cstdint>
-#include "merkle_tree_gpu.cuh"
+#include "merkle_tree.cuh"
 
 /*
 * Builds a Merkle tree on the GPU using a shared memory (SMEM) optimized approach.
@@ -15,8 +15,6 @@
 * Parameters:
 *  - n_blocks: number of input data blocks (leaves).
 *  - host_data_bytes: pointer to input data.
-*  - host_merkle_tree: optional output buffer for the full Merkle tree 
-*                       (used only when MERKLE_TEST is enabled).
 *  - leaves_per_block: optional number of leaves processed per block, it must be power of 2
 *                       (used only when MERKLE_TEST is enabled). 
 *  - sha256_windowed: selects the SHA-256 implementation variant
@@ -29,6 +27,5 @@
 MerkleTreeGPU* build_merkle_tree_SMEM(
     size_t n_blocks, 
     uint8_t* host_data_bytes, 
-    uint8_t* host_merkle_tree = nullptr, 
     int leaves_per_block = -1, 
     bool sha256_windowed = true);

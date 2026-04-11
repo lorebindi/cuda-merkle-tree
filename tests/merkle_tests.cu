@@ -1,10 +1,7 @@
 /*
 * 
-* This file contains all the set of tests used to verify the correctness of this work.
-*
-* In particular contains test on:
-*  - SHA-256 implementation on CUDA. 
-*  - Merkle tree built.
+* This file contains all the set of tests used to verify the correctness of the merkle building
+* process (both naive and SMEM solution).
 *
 */
 
@@ -17,6 +14,7 @@
 #include "../merkle/utils.cuh"
 #include "../merkle/naive_solution_build.cuh"
 #include "../merkle/shared_mem_solution_build.cuh"
+#include "../merkle/merkle_tree_cpu.hpp"
 #include "../data/data_generator.hpp"
 
 using namespace std;
@@ -25,7 +23,6 @@ enum MerkleTestMode {
     ROOT_ONLY,
     FULL_TREE
 };
-
 
 
 /*
@@ -44,14 +41,18 @@ void test_naive_solution(size_t n_blocks, bool sha256_windowed) {
     // generate bytes of data.
     cout << "Data blocks (leaves) number: " << n_blocks << "\n" << endl;
     uint8_t* host_data = generate_random_blocks(n_blocks);
+   
+    // build the merkle tree on the GPU
+    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data, sha256_windowed);
 
-     // preparing host merkle tree.
-    size_t merkle_tree_size = compute_merkle_tree_size(n_blocks);
-    size_t leaf_offset = merkle_tree_size - n_blocks;
+    // preparing host merkle tree.
+    size_t merkle_tree_size = merkle_tree_gpu->base.size;
+    size_t leaf_offset = merkle_tree_gpu->base.size - merkle_tree_gpu->base.n_leaves;
     cout << "Merkle tree size: " << merkle_tree_size << "\n" << endl;
     uint8_t* host_merkle_tree = (uint8_t*) malloc(merkle_tree_size * SHA256_OUTPUT_BLOCK_SIZE);
-    // build the merkle tree on the GPU
-    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data, host_merkle_tree);
+
+    gpuErrchk(cudaMemcpy(host_merkle_tree, merkle_tree_gpu->dev_tree,(merkle_tree_size)*SHA256_OUTPUT_BLOCK_SIZE,
+            cudaMemcpyDeviceToHost));
 
     cout << "GPU Merkle Tree computed. \n" << endl;
 
@@ -209,21 +210,26 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
 
     cout << "Number of leaves per block: " << leaves_per_block << "\n" << endl;
 
-     // preparing host merkle tree.
-    size_t merkle_tree_size = compute_merkle_tree_size(n_blocks);
-    size_t leaf_offset = merkle_tree_size - n_blocks;
+  
 
+    // build the merkle tree on the GPU
+    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data, leaves_per_block, sha256_windowed);
+
+    cout << "Merkle tree size: " << merkle_tree_gpu->base.size << "\n" << endl;
+    uint8_t* host_merkle_tree = (uint8_t*) malloc(merkle_tree_gpu->base.size * SHA256_OUTPUT_BLOCK_SIZE);
+
+    gpuErrchk(cudaMemcpy(host_merkle_tree, merkle_tree_gpu->dev_tree,(merkle_tree_gpu->base.size)*SHA256_OUTPUT_BLOCK_SIZE,
+            cudaMemcpyDeviceToHost));
+
+    size_t merkle_tree_size = merkle_tree_gpu->base.size;
+    size_t leaf_offset = merkle_tree_gpu->base.size - merkle_tree_gpu->base.n_leaves;
+
+    
     std::vector<size_t> level_sizes;
     std::vector<size_t> level_offsets;
 
     compute_merkle_levels_layout(n_blocks, leaf_offset, level_sizes, level_offsets
     );
-
-
-    cout << "Merkle tree size: " << merkle_tree_size << "\n" << endl;
-    uint8_t* host_merkle_tree = (uint8_t*) malloc(merkle_tree_size * SHA256_OUTPUT_BLOCK_SIZE);
-    // build the merkle tree on the GPU
-    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data, host_merkle_tree, leaves_per_block);
 
     cout << "GPU Merkle Tree computed. \n" << endl;
 
@@ -259,8 +265,6 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
         cout << "Some leaf hashes mismatch!" << endl;
         return false;
     }
-
-    free(host_data);
 
     // root verification
 
@@ -308,62 +312,27 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
 
     }
     else {
-        bool all_levels_match = true;
+        // building the entire merkle tree on host side
+        MerkleTreeCPU* cpu_tree = host_build_merkle_tree(n_blocks, host_data, sha256_windowed);
+        
+        // comparing the merkle tree computed in the host side with the one computed 
+        // in gpu side
+        bool all_match = memcmp(cpu_tree->host_tree, host_merkle_tree,
+                                merkle_tree_size * SHA256_OUTPUT_BLOCK_SIZE) == 0;
+        
+        merkle_tree_cpu_destroy(cpu_tree);
+        free(host_merkle_tree);
 
-        // CPU buffer iniziale = foglie
-        uint8_t* cpu_prev = curr_lev;
-        size_t cpu_prev_size = n_blocks;
-
-        for (size_t level = 1; level < level_sizes.size(); level++) {
-
-            size_t cpu_curr_size = (cpu_prev_size + 1) / 2;
-            uint8_t* cpu_curr = (uint8_t*) malloc(cpu_curr_size * SHA256_OUTPUT_BLOCK_SIZE);
-
-            // costruzione livello CPU
-            for (size_t i = 0; i < cpu_curr_size; i++) {
-                uint8_t* left = cpu_prev + (2*i)*SHA256_OUTPUT_BLOCK_SIZE;
-                uint8_t* right = cpu_prev + (2*i+1)*SHA256_OUTPUT_BLOCK_SIZE;
-
-                if ((cpu_prev_size % 2 == 1) && (i == cpu_curr_size - 1))
-                    right = left;
-
-                uint8_t concatenated[64];
-                memcpy(concatenated, left, SHA256_OUTPUT_BLOCK_SIZE);
-                memcpy(concatenated + SHA256_OUTPUT_BLOCK_SIZE, right, SHA256_OUTPUT_BLOCK_SIZE);
-
-                sha256_single_block_CPU(concatenated, cpu_curr + i*SHA256_OUTPUT_BLOCK_SIZE, sha256_windowed);
-            }
-
-            // GPU livello corrispondente
-            size_t gpu_offset = level_offsets[level];
-            uint8_t* gpu_level = host_merkle_tree + gpu_offset * SHA256_OUTPUT_BLOCK_SIZE;
-
-            // confronto
-            for (size_t i = 0; i < cpu_curr_size; i++) {
-                uint8_t* cpu_node = cpu_curr + i*SHA256_OUTPUT_BLOCK_SIZE;
-                uint8_t* gpu_node = gpu_level + i*SHA256_OUTPUT_BLOCK_SIZE;
-
-                if (memcmp(cpu_node, gpu_node, SHA256_OUTPUT_BLOCK_SIZE) != 0) {
-                    all_levels_match = false;
-                }
-            }
-
-            free(cpu_prev);
-            cpu_prev = cpu_curr;
-            cpu_prev_size = cpu_curr_size;
-        }
-
-        if (all_levels_match) {
-            cout << "\nRoots MATCH\n" << endl;
+        if (all_match) {
+            cout << "Full tree MATCH\n" << endl;
             outcome = true;
-        }
-        else{
-            cout << "\nSome nodes mismatch!\n" << endl;
+        } else {
+            cout << "Some nodes mismatch!\n" << endl;
             outcome = false;
         }
-            
-
     }
+
+    free(host_data);
 
     merkle_tree_gpu_destroy(merkle_tree_gpu);
     return outcome;    
@@ -426,7 +395,7 @@ int main() {
     bool outcome1 = run_all_merkle_tests_naive(true);
     
     // merkle tree building tests SMEM solution
-    bool outcome2 = run_all_merkle_tests_SMEM(ROOT_ONLY);
+    bool outcome2 = run_all_merkle_tests_SMEM(FULL_TREE);
 
     cout << "\n\n#####################################################################\n\n";
     cout << "================ MERKLE TESTS SUMMARY ====================\n";

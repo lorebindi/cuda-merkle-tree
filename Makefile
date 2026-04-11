@@ -3,7 +3,7 @@ NVXX            = nvcc
 NVXXFLAGS       = -std=c++17 -Isha256 -Idata -Imerkle
 NVOPTFLAGS      = -w -O3 --gpu-architecture=compute_80 --gpu-code=sm_80
 RDCFLAGS        = -rdc=true
-DEFINES_TEST    = -DMERKLE_TEST
+#DEFINES_TEST    = -DMERKLE_TEST
 
 # ---------------- Source files ----------------
 SRC_MAIN_CU     = main.cu sha256/sha256.cu merkle/naive_solution.cu
@@ -12,8 +12,8 @@ SRC_MAIN_CPP    = data/data_generator.cpp sha256/sha256_CPU.cpp
 SRC_SHA256_TEST_CU  = tests/sha256_tests.cu sha256/sha256_GPU.cu merkle/utils.cu
 SRC_SHA256_TEST_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp
 
-SRC_MERKLE_TEST_CU  = tests/merkle_tests.cu merkle/naive_solution.cu merkle/shared_mem_solution.cu merkle/utils.cu sha256/sha256_GPU.cu
-SRC_MERKLE_TEST_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp
+SRC_MERKLE_TEST_CU  = tests/merkle_tests.cu merkle/naive_solution_build.cu merkle/shared_mem_solution_build.cu merkle/utils.cu sha256/sha256_GPU.cu
+SRC_MERKLE_TEST_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp merkle/merkle_tree_cpu.cpp
 
 OBJ_MAIN_CU         = $(SRC_MAIN_CU:.cu=.o)
 OBJ_MAIN_CPP        = $(SRC_MAIN_CPP:.cpp=.o)
