@@ -14,7 +14,27 @@ using namespace std;
 #define THREADS_PER_BLOCK 256
 
 /*
-* Kernel that builds the internal level of the merkle tree.
+* Kernel that builds a single internal level of a merkle tree stored in GMEM in heap-style.
+*
+* The kernel build a full tree level by computing parent hashes in parallel,
+* where each thread processes one pair of child nodes and writes a single parent node.
+*
+* Example: 8 leaves, 2 levels per block, 4 blocks (THREADS_PER_BLOCK = 2)
+*
+* Heap layout:
+*  Level 0:                         [n0]                                
+*  Level 1:               [n1]                 [n2]             
+*  Level 2:         *[n3]       [n4]      [n5]       [n6]      <- parents_level points at * (beginning of this level)
+*  Level 3:       *[n7][n8]  [n9][n10] [n11][n12] [n13][n14]    <- children_level points at * (beginning of this level)
+*  
+*
+* Block 0 thread 0: reads [n7][n8] from GMEM, computes [n3] and store it in GMEM. 
+* Block 0 thread 1: reads [n9][n10] from GMEM, computes [n4] and store it in GMEM.
+* Block 0 thread 2: ....
+*
+* After the invocation of this kernel, a new invocation can treat parents_level as the new
+* children_levels and so on up to the root.
+*
 *
 * Parameters:
 *  - parent_level_size: number of nodes in the parent level.

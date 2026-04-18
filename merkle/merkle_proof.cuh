@@ -38,3 +38,25 @@ uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs, bool sha256
  *    false -> proof is invalid
  */
 bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu, bool sha256_windowed);
+
+/*
+ * Verifies a batch of Merkle proofs on the CPU against a precomputed Merkle tree.
+ *
+ * For each proof, the function:
+ *  - hashes the raw leaf data into a 32-byte SHA-256 digest,
+ *  - iteratively reconstructs parent hashes up to the root,
+ *  - compares each computed parent node against the corresponding node in the tree.
+ *
+ * The tree is assumed to be stored in heap-style layout (array-based binary tree),
+ * where each node is a 32-byte SHA-256 hash.
+ *
+ * Parameters:
+ *  - proof_batch: batch of raw Merkle proofs and associated leaf indices
+ *  - merkle_tree: CPU representation of the full Merkle tree
+ *  - sha256_windowed: selects SHA-256 variant (windowed or standard)
+ *
+ * Returns:
+ *  - Array of boolean values indicating whether each proof is valid.
+ *    The caller is responsible for freeing the returned memory.
+ */
+bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed);

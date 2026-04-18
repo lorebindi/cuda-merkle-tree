@@ -38,6 +38,21 @@ typedef struct ProofBatch {
 } ProofBatch;
 
 /*
+ * ProofDistribution defines the strategy used to assign proofs across leaves.
+ *
+ * - DIST_UNIFORM: Each leaf is guaranteed at least one proof, representing
+ *   a simple baseline where proofs are evenly distributed.
+ *
+ * - DIST_ZIPF: Proofs follow a Zipfian (power-law) distribution, meaning a small
+ *   number of leaves receive many proofs while most receive few. This models
+ *   more realistic scenarios where popularity or activity is highly skewed.
+ */
+typedef enum {
+    DIST_UNIFORM,  // baseline: at least one proof per leaf.
+    DIST_ZIPF,     // realistic: power-law distribution with casual popolarity
+} ProofDistribution;
+
+/*
  * Allocates a contiguous buffer of size n_blocks * BLOCK_SIZE bytes.
  * Each block is filled with pseudo-random data.
  */
@@ -61,7 +76,7 @@ void free_blocks(uint8_t* ptr);
  * The fraction of tampered requests is controlled by 'tamper_rate' in [0.0, 1.0].
  * The expected[] bitmap records ground truth for result verification.
  */
-ProofBatch* generate_proof_requests(const uint8_t* blocks, size_t n_blocks, size_t n_proofs, float tamper_rate);
+ProofBatch* generate_proof_requests(const uint8_t* blocks, size_t n_blocks, size_t n_proofs, float tamper_rate, ProofDistribution dist, double zipf_s);
 
 /* Free ProofBatch */
 void free_proof_batch(ProofBatch* batch);
