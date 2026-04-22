@@ -7,6 +7,10 @@
 
 #define THREADS_PER_BLOCK 256
 
+/* SHA-256 implementation selected merkle tree building and merkle proof execution.
+* The windowed variant (true) showed unstable benchmark behaviour. */
+constexpr bool SHA256_WINDOWED = false;
+
 /*
  * Error checking helper for CUDA calls.
  *
@@ -75,13 +79,13 @@ __host__ __device__ __forceinline__ size_t compute_merkle_tree_size(size_t n_lea
  * - Handling of odd nodes (e.g., duplicating the left child) must be done
  *   outside this function.
  */
-__device__ __forceinline__ void compute_parent_hash(uint8_t* parent, uint8_t* left, uint8_t* right, bool sha256_windowed){
+__device__ __forceinline__ void compute_parent_hash(uint8_t* parent, uint8_t* left, uint8_t* right){
     
     uint8_t concatenated[64];
     memcpy(concatenated, left, SHA256_OUTPUT_BLOCK_SIZE);
     memcpy(concatenated+SHA256_OUTPUT_BLOCK_SIZE, right, SHA256_OUTPUT_BLOCK_SIZE);
 
-    sha256_single_block(concatenated, parent, sha256_windowed);
+    sha256_single_block<SHA256_WINDOWED>(concatenated, parent);
 }
 
 /*
@@ -119,4 +123,17 @@ __device__ __forceinline__ bool device_memcmp32(const uint8_t* a, const uint8_t*
 *  - merkle_tree: pointer to a byte array. Each 32 contiguos positions (i.e bytes)
 *                 correspond to a single node of the Merkle Tree (stored like an heap).
 */
-__global__ void leaf_level_build(int n, size_t leaf_offset, uint8_t *data, uint8_t *merkle_tree, bool sha256_windowed);
+template<bool sha256_windowed>
+__global__ void leaf_level_build(int n, size_t leaf_offset, uint8_t *data, uint8_t *merkle_tree) {
+     
+    unsigned int i = (blockIdx.x * blockDim.x) + threadIdx.x;
+    
+    if (i >= n) return;
+
+    // Each data block is 64 byte.
+    uint8_t* input_data_block = data + (i*SHA256_INPUT_BLOCK_SIZE); 
+    // Each node is 32 byte.
+    uint8_t* output_hash = merkle_tree + ((leaf_offset + i) * SHA256_OUTPUT_BLOCK_SIZE);
+    // Hashing
+    sha256_single_block<sha256_windowed>(input_data_block, output_hash);
+}

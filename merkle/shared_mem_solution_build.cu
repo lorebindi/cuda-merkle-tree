@@ -12,7 +12,7 @@ using namespace std;
 
 
 /*
-* GPU Ampere 100 (from cudaGetDeviceProp): 
+* GPU Ampere 30 (from cudaGetDeviceProp): 
 *   - SMEM per block: 48 KB (at most).
 *   - SMEM per SM: 164 KB (at most).
 *
@@ -82,11 +82,10 @@ using namespace std;
 *         level in GMEM where to start writing
 * - dev_merkle_tree: pointer to the root of the merkle tree.
 * - leaves_per_block: number (power of 2) of leaves managed by each block.
-* - sha256_windowed: selects the SHA-256 implementation variant
 *
 */
 __global__ void internal_level_build_SMEM(uint8_t *base_band_GMEM, int base_band_GMEM_size, int base_band_GMEM_write_offset, 
-                                          uint8_t *dev_merkle_tree, int leaves_per_block, bool sha256_windowed) {
+                                          uint8_t *dev_merkle_tree, int leaves_per_block) {
 
     int tid = threadIdx.x; // local block index
     // Base index of this block's leaves in the base_band_GMEM.
@@ -137,7 +136,7 @@ __global__ void internal_level_build_SMEM(uint8_t *base_band_GMEM, int base_band
             if (is_last_odd) right = left;
 
             // SMEM write
-            compute_parent_hash(parent, left, right, sha256_windowed);
+            compute_parent_hash(parent, left, right);
         }
 
         __syncthreads(); // barrier
@@ -291,14 +290,13 @@ __host__ size_t compute_top_band_offset(size_t base_band_offset, size_t base_ban
 *  - host_data_bytes: pointer to input data (optional if generated internally)
 *  - leaves_per_block: optional number of leaves processed per block, it must be power of 2
 *                       (used only when MERKLE_TEST is enabled). 
-*  - sha256_windowed: selects the SHA-256 implementation variant
 *
 * Returns:
 *  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
 *    The structure contains the device pointer to the tree and its metadata. The caller
 *    is responsible for freeing it.
 */
-MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, int leaves_per_block, bool sha256_windowed){ 
+MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, int leaves_per_block){ 
 
     if (leaves_per_block <= 0 || ( (leaves_per_block & (leaves_per_block - 1)) != 0 )) {
         cout << "The parameter 'leaves_per_block' must be a power of two." << endl;
@@ -324,7 +322,7 @@ MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes,
 
     // computing the leaf level on GPU
     int blocks_per_grid = (n_blocks + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK; // rouding up
-    leaf_level_build<<<blocks_per_grid, THREADS_PER_BLOCK>>>(n_blocks, leaf_offset, dev_data_bytes, dev_merkle_tree, sha256_windowed);
+    leaf_level_build<SHA256_WINDOWED><<<blocks_per_grid, THREADS_PER_BLOCK>>>(n_blocks, leaf_offset, dev_data_bytes, dev_merkle_tree);
     cudaDeviceSynchronize();
 
     // deallocate GPU data bytes
@@ -355,7 +353,7 @@ MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes,
         size_t size_SMEM = (compute_merkle_tree_size(effective_leaves_per_block) - effective_leaves_per_block) * SHA256_OUTPUT_BLOCK_SIZE;
         // computing the band of the merkle tree through the kernel
         internal_level_build_SMEM<<<blocks_per_grid, THREADS_PER_BLOCK, size_SMEM>>>(
-            base_band, base_band_size, (int)base_band_write_offset, dev_merkle_tree, effective_leaves_per_block, sha256_windowed);
+            base_band, base_band_size, (int)base_band_write_offset, dev_merkle_tree, effective_leaves_per_block);
 
         cudaDeviceSynchronize();
         

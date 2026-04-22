@@ -31,7 +31,6 @@ __host__ int compute_optimal_leaves_per_block(int input_level_size, int threads_
 *  - host_data_bytes: pointer to input data.
 *  - leaves_per_block: optional number of leaves processed per block, it must be power of 2
 *                       (used only when MERKLE_TEST is enabled). 
-*  - sha256_windowed: selects the SHA-256 implementation variant
 *
 * Returns:
 *  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
@@ -41,5 +40,4 @@ __host__ int compute_optimal_leaves_per_block(int input_level_size, int threads_
 MerkleTreeGPU* build_merkle_tree_SMEM(
     size_t n_blocks, 
     uint8_t* host_data_bytes, 
-    int leaves_per_block = -1, 
-    bool sha256_windowed = true);
+    int leaves_per_block = -1);

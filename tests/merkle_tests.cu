@@ -40,13 +40,13 @@ enum MerkleTestMode {
  * 
  * Reports mismatches if any, otherwise confirms all leaf hashes and root match.
  */
-bool test_naive_solution(size_t n_blocks, bool sha256_windowed) {
+bool test_naive_solution(size_t n_blocks) {
     // generate bytes of data.
     cout << "Data blocks (leaves) number: " << n_blocks << "\n" << endl;
     uint8_t* host_data = generate_random_blocks(n_blocks);
    
     // build the merkle tree on the GPU
-    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data, sha256_windowed);
+    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data);
 
     // preparing host merkle tree.
     size_t merkle_tree_size = merkle_tree_gpu->base.size;
@@ -106,7 +106,7 @@ bool test_naive_solution(size_t n_blocks, bool sha256_windowed) {
             memcpy(concatenated, left, SHA256_OUTPUT_BLOCK_SIZE);
             memcpy(concatenated + SHA256_OUTPUT_BLOCK_SIZE, right, SHA256_OUTPUT_BLOCK_SIZE);
 
-            sha256_single_block_CPU(concatenated, curr_lev + i*SHA256_OUTPUT_BLOCK_SIZE, sha256_windowed);
+            sha256_single_block_CPU(concatenated, curr_lev + i*SHA256_OUTPUT_BLOCK_SIZE, SHA256_WINDOWED);
         }
 
         free(prec_lev);
@@ -134,7 +134,7 @@ bool test_naive_solution(size_t n_blocks, bool sha256_windowed) {
     return outcome;
 }
 
-bool run_all_merkle_tests_naive(bool sha256_windowed) {
+bool run_all_merkle_tests_naive() {
 
     cout << "\n================ MERKLE TREE NAIVE SOLUTION TEST SUITE ================\n";
     vector<string> failed_tests;
@@ -142,7 +142,7 @@ bool run_all_merkle_tests_naive(bool sha256_windowed) {
     auto run_test = [&](size_t n_blocks, const string& desc) {
         cout << "\n[TEST] " << desc << " n_blocks = " << n_blocks << "\n";
         try {
-            bool passed = test_naive_solution(n_blocks, sha256_windowed);
+            bool passed = test_naive_solution(n_blocks);
             if (!passed)
                 failed_tests.push_back(desc + " (n_blocks=" + to_string(n_blocks) + ")");
         } catch (...) {
@@ -221,7 +221,7 @@ void compute_merkle_levels_layout(size_t n_leaves,
  * 
  * Reports mismatches if any, otherwise confirms all leaf hashes and root match.
  */
-bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windowed, MerkleTestMode mode) {
+bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, MerkleTestMode mode) {
     // generate bytes of data.
     cout << "Data blocks (leaves) number: " << n_blocks << "\n" << endl;
     uint8_t* host_data = generate_random_blocks(n_blocks);
@@ -231,7 +231,7 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
   
 
     // build the merkle tree on the GPU
-    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data, leaves_per_block, sha256_windowed);
+    MerkleTreeGPU* merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data, leaves_per_block);
 
     cout << "Merkle tree size: " << merkle_tree_gpu->base.size << "\n" << endl;
     uint8_t* host_merkle_tree = (uint8_t*) malloc(merkle_tree_gpu->base.size * SHA256_OUTPUT_BLOCK_SIZE);
@@ -267,7 +267,7 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
     uint8_t* curr_lev = (uint8_t*) malloc(n_blocks * SHA256_OUTPUT_BLOCK_SIZE);
     for (size_t i = 0; i < n_blocks; i++) {
         // computing CPU hash of the i-th leaf
-        sha256_single_block_CPU(host_data + i*SHA256_INPUT_BLOCK_SIZE, curr_lev + i*SHA256_OUTPUT_BLOCK_SIZE, sha256_windowed);
+        sha256_single_block_CPU(host_data + i*SHA256_INPUT_BLOCK_SIZE, curr_lev + i*SHA256_OUTPUT_BLOCK_SIZE, SHA256_WINDOWED);
         // retrieve the GPU hash of the i-th leaf
         uint8_t* gpu_leaf = host_merkle_tree + (leaf_offset + i)*SHA256_OUTPUT_BLOCK_SIZE;
         // compare
@@ -307,7 +307,7 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
                 memcpy(concatenated, left, SHA256_OUTPUT_BLOCK_SIZE);
                 memcpy(concatenated + SHA256_OUTPUT_BLOCK_SIZE, right, SHA256_OUTPUT_BLOCK_SIZE);
 
-                sha256_single_block_CPU(concatenated, curr_lev + i*SHA256_OUTPUT_BLOCK_SIZE, sha256_windowed);
+                sha256_single_block_CPU(concatenated, curr_lev + i*SHA256_OUTPUT_BLOCK_SIZE, SHA256_WINDOWED);
             }
 
             free(prec_lev);
@@ -331,7 +331,7 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, bool sha256_windo
     }
     else {
         // building the entire merkle tree on host side
-        MerkleTreeCPU* cpu_tree = host_build_merkle_tree(n_blocks, host_data, sha256_windowed);
+        MerkleTreeCPU* cpu_tree = host_build_merkle_tree(n_blocks, host_data, SHA256_WINDOWED);
         
         // comparing the merkle tree computed in the host side with the one computed 
         // in gpu side
@@ -363,7 +363,7 @@ bool run_all_merkle_tests_SMEM(MerkleTestMode mode_small_size) {
     auto run_test = [&](size_t n_blocks, int leaves_per_block, MerkleTestMode mode, const string& desc) {
         cout << "\n[TEST] " << desc << " n_blocks = " << n_blocks
              << ", leaves_per_block = " << leaves_per_block << "\n";
-        bool passed = test_SMEM_solution(n_blocks, leaves_per_block, true, mode);
+        bool passed = test_SMEM_solution(n_blocks, leaves_per_block, mode);
         if (!passed) {
             failed_tests.push_back(desc + " (n_blocks=" + to_string(n_blocks) +
                                      ", leaves_per_block=" + to_string(leaves_per_block) + ")");
@@ -404,7 +404,7 @@ bool run_all_merkle_tests_SMEM(MerkleTestMode mode_small_size) {
     
 }
 
-bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool smem, ProofDistribution distribution, double zipf_s, bool sha256_windowed, bool check_with_cpu){
+bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool smem, ProofDistribution distribution, double zipf_s, bool check_with_cpu){
 
     uint8_t* host_data_blocks = generate_random_blocks(n_blocks);
 
@@ -416,13 +416,13 @@ bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool
 
     if(smem) {
         leaves_per_block = compute_optimal_leaves_per_block(n_blocks, THREADS_PER_BLOCK);
-        merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data_blocks, leaves_per_block, sha256_windowed);
+        merkle_tree_gpu = build_merkle_tree_SMEM(n_blocks, host_data_blocks, leaves_per_block);
     }
     else{
-        merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data_blocks, sha256_windowed);
+        merkle_tree_gpu = build_merkle_tree_naive(n_blocks, host_data_blocks);
     }
 
-    bool* gpu_result = compute_merkle_proofs (proof_batch, merkle_tree_gpu, sha256_windowed);
+    bool* gpu_result = compute_merkle_proofs (proof_batch, merkle_tree_gpu);
 
     bool outcome = false;
 
@@ -431,8 +431,8 @@ bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool
     bool* cpu_result = NULL;
 
     if (check_with_cpu) {
-        merkle_tree_cpu = host_build_merkle_tree(n_blocks, host_data_blocks, sha256_windowed);
-        cpu_result = host_compute_merkle_proofs(proof_batch, merkle_tree_cpu, sha256_windowed);
+        merkle_tree_cpu = host_build_merkle_tree(n_blocks, host_data_blocks, SHA256_WINDOWED);
+        cpu_result = host_compute_merkle_proofs(proof_batch, merkle_tree_cpu, SHA256_WINDOWED);
 
         int gpu_vs_expected = memcmp(proof_batch->expected, gpu_result, sizeof(bool) * n_proofs);
         int cpu_vs_expected = memcmp(proof_batch->expected, cpu_result, sizeof(bool) * n_proofs);
@@ -479,7 +479,7 @@ bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool
     
 }
 
-bool run_all_merkle_proof_tests(bool smem, ProofDistribution distribution, double zipf_s, bool sha256_windowed) {
+bool run_all_merkle_proof_tests(bool smem, ProofDistribution distribution, double zipf_s) {
     cout << "\n================ MERKLE PROOF TEST SUITE ================\n";
     vector<string> failed_tests;
 
@@ -488,7 +488,7 @@ bool run_all_merkle_proof_tests(bool smem, ProofDistribution distribution, doubl
              << " | n_blocks=" << n_blocks
              << " | n_proofs=" << n_proofs
              << " | tamper_rate=" << tamper_rate << "\n";
-        bool passed = test_merkle_proof(n_blocks, n_proofs, tamper_rate, smem, distribution, zipf_s, sha256_windowed, check_with_cpu);
+        bool passed = test_merkle_proof(n_blocks, n_proofs, tamper_rate, smem, distribution, zipf_s, check_with_cpu);
         if (!passed)
             failed_tests.push_back(desc + " (n_blocks=" + to_string(n_blocks) +
                                    ", n_proofs=" + to_string(n_proofs) + ")");
@@ -556,20 +556,19 @@ bool run_all_merkle_proof_tests(bool smem, ProofDistribution distribution, doubl
 int main() {
     srand(time(NULL));
 
-    const bool sha256_windowed = true;
     const bool use_smem = true;
     
     // merkle tree building tests naive solution
-    //bool outcome1 = run_all_merkle_tests_naive(sha256_windowed);
+    bool outcome1 = run_all_merkle_tests_naive();
     
     // merkle tree building tests SMEM solution
-    //bool outcome2 = run_all_merkle_tests_SMEM(ROOT_ONLY);
+    bool outcome2 = run_all_merkle_tests_SMEM(ROOT_ONLY);
 
-    bool outcome3 = run_all_merkle_proof_tests(use_smem, DIST_ZIPF, 1.0, sha256_windowed );
+    bool outcome3 = run_all_merkle_proof_tests(use_smem, DIST_ZIPF, 1.0 );
 
     cout << "\n\n#####################################################################\n\n";
     cout << "================ MERKLE TESTS SUMMARY ====================\n";
-    if(/*outcome1 && outcome2 &&*/ outcome3) {
+    if(outcome1 && outcome2 && outcome3) {
         cout << "All tests PASSED!\n";
     }
     else{

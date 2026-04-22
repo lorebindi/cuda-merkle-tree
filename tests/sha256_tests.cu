@@ -18,7 +18,7 @@ using namespace std;
         cerr << "CUDA error: " << cudaGetErrorString(e) << " at line " << __LINE__ << "\n"; exit(1); }}
 
 
-        struct TestVector {
+struct TestVector {
     const char* msg;
     const char* expected;
 };
@@ -34,8 +34,9 @@ TestVector test_vectors[] = {
 #define NUM_TESTS (sizeof(test_vectors)/sizeof(TestVector))
 
 /* Simple kernel that computes SHA-256 of a single block */
-__global__ void single_test_sha256_kernel(const uint8_t* input, uint8_t* output, bool sha256_windowed) {
-    sha256_single_block(input, output, sha256_windowed);
+template<bool sha256_windowed>
+__global__ void single_test_sha256_kernel(const uint8_t* input, uint8_t* output) {
+    sha256_single_block<sha256_windowed>(input, output);
 }
 
 /* Utility function that converts a 32-byte hash to a hexadecimal string */
@@ -70,7 +71,13 @@ bool run_single_block_test(const char* msg, const char* expected, bool print, bo
     cudaMalloc(&d_output, 32);
     cudaMemcpy(d_input, h_block, 64, cudaMemcpyHostToDevice);
 
-    single_test_sha256_kernel<<<1,1>>>(d_input, d_output, sha256_windowed);
+    if(sha256_windowed){
+        single_test_sha256_kernel<true><<<1,1>>>(d_input, d_output);
+    }
+    else{
+        single_test_sha256_kernel<false><<<1,1>>>(d_input, d_output);
+    }
+
     cudaDeviceSynchronize();
 
     uint8_t h_hash[32];
@@ -149,7 +156,12 @@ bool run_cpu_gpu_consistency_test(bool windowed) {
         CUDA_CHECK(cudaMalloc(&d_output, SHA256_OUTPUT_BLOCK_SIZE));
         CUDA_CHECK(cudaMemcpy(d_input, h_block, SHA256_INPUT_BLOCK_SIZE, cudaMemcpyHostToDevice));
 
-        single_test_sha256_kernel<<<1,1>>>(d_input, d_output, windowed);
+        if(windowed){
+            single_test_sha256_kernel<true><<<1,1>>>(d_input, d_output);
+        }
+        else{
+            single_test_sha256_kernel<false><<<1,1>>>(d_input, d_output);
+        }
         CUDA_CHECK(cudaDeviceSynchronize());
 
         uint8_t gpu_hash[SHA256_OUTPUT_BLOCK_SIZE];

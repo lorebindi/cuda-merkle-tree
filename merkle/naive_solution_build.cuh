@@ -15,13 +15,11 @@
  * Parameters:
  *  - n_blocks: number of input data blocks (i.e., number of leaves).
  *  - host_data_bytes: pointer to the host array containing the input blocks.
- *  - sha256_windowed: selects the SHA256 implementation used during hashing.
- *                     If true, the windowed message schedule version is used;
- *                     otherwise the standard implementation is used.
+ *  - out_elapsed: elapsed merkle tree building time.
  *
  * Returns:
  *  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
  *    The structure contains the device pointer to the tree and its metadata. The caller
  *    is responsible for freeing it.
  */
-MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, bool sha256_windowed=true);
+MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint64_t* out_elapsed = nullptr);

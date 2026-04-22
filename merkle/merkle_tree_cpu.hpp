@@ -20,10 +20,11 @@
 *  - n_blocks: number of input data blocks (leaf nodes)
 *  - host_data_bytes: pointer to input data in host memory
 *  - sha256_windowed: selects between SHA-256 implementation variants
+*  - out_elapsed: elapsed merkle tree building time.
 *
 * Returns a pointer to a MerkleTreeCPU structure.
 */
-MerkleTreeCPU* host_build_merkle_tree(size_t n_blocks, uint8_t* host_data_bytes, bool sha256_windowed);
+MerkleTreeCPU* host_build_merkle_tree(size_t n_blocks, uint8_t* host_data_bytes, bool sha256_windowed, uint64_t* out_elapsed = nullptr);
 
 /*
  * Verifies a batch of Merkle proofs on the CPU against a precomputed Merkle tree.

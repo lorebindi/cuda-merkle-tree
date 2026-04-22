@@ -24,7 +24,7 @@
 */
 __global__ void merkle_proofs_verification (uint8_t *dev_merkle_tree, uint32_t merkle_tree_depth, int leaves_offset, 
                                                     int leaves_number, uint8_t* proofs, uint32_t* leaf_index, int n_proofs, 
-                                                    bool* result, bool sha256_windowed){
+                                                    bool* result){
 
     unsigned int i = (blockIdx.x * blockDim.x) + threadIdx.x;
 
@@ -71,7 +71,7 @@ __global__ void merkle_proofs_verification (uint8_t *dev_merkle_tree, uint32_t m
         // computing and storing the hash of the temporary parent node
         left  = (sibling_offset_step == +1) ? curr_node : sibling_node;
         right = (sibling_offset_step == +1) ? sibling_node : curr_node;
-        compute_parent_hash(temp_parent_node, left, right, sha256_windowed);
+        compute_parent_hash(temp_parent_node, left, right);
         // computing parent offset 
         parent_lev_offset = curr_lev_offset - (curr_lev_size + 1) / 2;
         parent_offset = parent_lev_offset + ((curr_node_offset - curr_lev_offset) >> 1);       
@@ -109,14 +109,13 @@ __global__ void merkle_proofs_verification (uint8_t *dev_merkle_tree, uint32_t m
 * Parameters:
 *  - proof_batch: batch containing raw proof inputs to be hashed
 *  - n_proofs: number of proofs in the batch
-*  - sha256_windowed: selects between standard and windowed SHA-256 variant
 *
 * Returns:
 *  - Pointer to a host-allocated array of size:
 *      n_proofs * SHA256_OUTPUT_BLOCK_SIZE
 *    containing the computed SHA-256 hashes.
 */
-uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs, bool sha256_windowed){
+uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs){
     // allocate the return value
     uint8_t* host_hashed_proofs = (uint8_t*) malloc (sizeof(uint8_t)* SHA256_OUTPUT_BLOCK_SIZE * n_proofs);
 
@@ -133,7 +132,7 @@ uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs, bool sha256
 
     // computing the leaf level on GPU
     int blocks_per_grid = (n_proofs + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK; // rouding up
-    leaf_level_build<<<blocks_per_grid, THREADS_PER_BLOCK>>>(n_proofs, 0, dev_proofs, dev_hashed_proofs, sha256_windowed);
+    leaf_level_build<SHA256_WINDOWED><<<blocks_per_grid, THREADS_PER_BLOCK>>>(n_proofs, 0, dev_proofs, dev_hashed_proofs);
     cudaDeviceSynchronize();
 
     // copy of dev_hashed_proofs in host_hashed_proofs
@@ -156,17 +155,16 @@ uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs, bool sha256
  * Parameters:
  *  - proof_batch: batch of Merkle proofs to verify
  *  - merkle_tree_gpu: GPU-resident Merkle tree used as reference
- *  - sha256_windowed: selects SHA-256 implementation variant
  *
  * Returns:
  *  - Pointer to an array of boolean values of size n_proofs:
  *    true  -> proof is valid
  *    false -> proof is invalid
  */
-bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu, bool sha256_windowed){
+bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu){
     
     size_t n_proofs = proof_batch->n_proofs;
-    uint8_t* host_hashed_proofs = get_hashed_proofs(proof_batch, n_proofs, sha256_windowed);
+    uint8_t* host_hashed_proofs = get_hashed_proofs(proof_batch, n_proofs);
 
     uint8_t* dev_proofs;
     uint32_t* dev_leaf_index;
@@ -193,8 +191,7 @@ bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_
         dev_proofs,
         dev_leaf_index,
         n_proofs,
-        dev_result,
-        sha256_windowed
+        dev_result
     );
 
     cudaDeviceSynchronize();
@@ -209,7 +206,6 @@ bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_
     gpuErrchk(cudaFree(dev_result));
 
     free(host_hashed_proofs);
-    //free(host_result);
 
     return host_result;
     

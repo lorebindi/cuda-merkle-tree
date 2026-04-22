@@ -15,21 +15,27 @@ SRC_SHA256_TEST_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp
 SRC_MERKLE_TEST_CU  = tests/merkle_tests.cu merkle/naive_solution_build.cu merkle/shared_mem_solution_build.cu merkle/merkle_proof.cu merkle/utils.cu sha256/sha256_GPU.cu
 SRC_MERKLE_TEST_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp merkle/merkle_tree_cpu.cpp
 
-OBJ_MAIN_CU         = $(SRC_MAIN_CU:.cu=.o)
-OBJ_MAIN_CPP        = $(SRC_MAIN_CPP:.cpp=.o)
-OBJ_SHA256_TEST_CU  = $(SRC_SHA256_TEST_CU:.cu=.o)
-OBJ_SHA256_TEST_CPP = $(SRC_SHA256_TEST_CPP:.cpp=.o)
-OBJ_MERKLE_TEST_CU  = $(SRC_MERKLE_TEST_CU:.cu=.o)
-OBJ_MERKLE_TEST_CPP = $(SRC_MERKLE_TEST_CPP:.cpp=.o)
+SRC_SHA256_BENCH_CU  = benchmarks/sha256_benchmarks.cu sha256/sha256_GPU.cu
+SRC_SHA256_BENCH_CPP = data/data_generator.cpp sha256/sha256_CPU.cpp
+
+OBJ_MAIN_CU          = $(SRC_MAIN_CU:.cu=.o)
+OBJ_MAIN_CPP         = $(SRC_MAIN_CPP:.cpp=.o)
+OBJ_SHA256_TEST_CU   = $(SRC_SHA256_TEST_CU:.cu=.o)
+OBJ_SHA256_TEST_CPP  = $(SRC_SHA256_TEST_CPP:.cpp=.o)
+OBJ_MERKLE_TEST_CU   = $(SRC_MERKLE_TEST_CU:.cu=.o)
+OBJ_MERKLE_TEST_CPP  = $(SRC_MERKLE_TEST_CPP:.cpp=.o)
+OBJ_SHA256_BENCH_CU  = $(SRC_SHA256_BENCH_CU:.cu=.o)
+OBJ_SHA256_BENCH_CPP = $(SRC_SHA256_BENCH_CPP:.cpp=.o)
 
 # ---------------- Targets ----------------
 TARGET_MAIN         = main
 TARGET_SHA256_TEST  = sha256_tests
 TARGET_MERKLE_TEST  = merkle_tests
+TARGET_SHA256_BENCH = sha256_benchmarks
 
 # ---------------- Default ----------------
 .DEFAULT_GOAL := all
-.PHONY: all clean test
+.PHONY: all clean test bench
 
 all: $(TARGET_MAIN)
 
@@ -44,6 +50,10 @@ $(TARGET_SHA256_TEST): $(OBJ_SHA256_TEST_CU) $(OBJ_SHA256_TEST_CPP)
 $(TARGET_MERKLE_TEST): $(OBJ_MERKLE_TEST_CU) $(OBJ_MERKLE_TEST_CPP)
 	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) $(DEFINES_TEST) $^ -o $@
 
+# ---------------- Build benchmark executables ----------------
+$(TARGET_SHA256_BENCH): $(OBJ_SHA256_BENCH_CU) $(OBJ_SHA256_BENCH_CPP)
+	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) $^ -o $@
+
 # ---------------- Compile rules ----------------
 %.o: %.cu
 	$(NVXX) $(NVXXFLAGS) $(NVOPTFLAGS) $(RDCFLAGS) $(DEFINES_TEST) -dc $< -o $@
@@ -54,9 +64,14 @@ $(TARGET_MERKLE_TEST): $(OBJ_MERKLE_TEST_CU) $(OBJ_MERKLE_TEST_CPP)
 # ---------------- Target test ----------------
 test: $(TARGET_SHA256_TEST) $(TARGET_MERKLE_TEST)
 
+# ---------------- Target bench ----------------
+bench: $(TARGET_SHA256_BENCH)
+
 # ---------------- Clean ----------------
 clean:
 	rm -f $(OBJ_MAIN_CU) $(OBJ_MAIN_CPP) \
 	      $(OBJ_SHA256_TEST_CU) $(OBJ_SHA256_TEST_CPP) \
 	      $(OBJ_MERKLE_TEST_CU) $(OBJ_MERKLE_TEST_CPP) \
-	      $(TARGET_MAIN) $(TARGET_SHA256_TEST) $(TARGET_MERKLE_TEST)
+	      $(OBJ_SHA256_BENCH_CU) $(OBJ_SHA256_BENCH_CPP) \
+	      $(TARGET_MAIN) $(TARGET_SHA256_TEST) $(TARGET_MERKLE_TEST) \
+	      $(TARGET_SHA256_BENCH)

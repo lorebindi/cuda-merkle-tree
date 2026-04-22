@@ -37,7 +37,7 @@ uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs, bool sha256
  *    true  -> proof is valid
  *    false -> proof is invalid
  */
-bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu, bool sha256_windowed);
+bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu);
 
 /*
  * Verifies a batch of Merkle proofs on the CPU against a precomputed Merkle tree.
@@ -59,4 +59,4 @@ bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_
  *  - Array of boolean values indicating whether each proof is valid.
  *    The caller is responsible for freeing the returned memory.
  */
-bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed);
+//bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree);
