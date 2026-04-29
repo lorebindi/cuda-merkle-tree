@@ -41,9 +41,10 @@ MerkleTreeCPU* host_build_merkle_tree(size_t n_blocks, uint8_t* host_data_bytes,
  *  - proof_batch: batch of raw Merkle proofs and associated leaf indices
  *  - merkle_tree: CPU representation of the full Merkle tree
  *  - sha256_windowed: selects SHA-256 variant (windowed or standard)
+ *  - out_elapsed: elapsed merkle proof verification time.
  *
  * Returns:
  *  - Array of boolean values indicating whether each proof is valid.
  *    The caller is responsible for freeing the returned memory.
  */
-bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed);
+bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed, uint64_t* out_elapsed = nullptr);

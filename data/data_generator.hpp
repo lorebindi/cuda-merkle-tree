@@ -60,22 +60,30 @@ uint8_t* generate_random_blocks(size_t n_blocks);
 void free_blocks(uint8_t* ptr);
 
 /*
- * Generates a batch of n_proofs Merkle proof requests from a pool of 'n_blocks' original data 'blocks'.
- * 
- * Proof requests are generated with monotonically increasing leaf indices to ensure
- * coalesced memory access patterns on the GPU. Each leaf is assigned at least
- * (n_proofs / n_blocks) proof requests; the first (n_proofs % n_blocks) leaves
- * receive one additional request, yielding the index distribution:
- *
- *   [0, 0, 1, 1, ..., extra-1, extra-1, extra, extra+1, ..., n_blocks-1]
- *
- * Each proof request is either:
- *   - VALID:         original block data + correct leaf index
- *   - TAMPERED_DATA: random block data   + correct leaf index (invalid proof)
- *
- * The fraction of tampered requests is controlled by 'tamper_rate' in [0.0, 1.0].
- * The expected[] bitmap records ground truth for result verification.
- */
+* Generates n_proofs Merkle proof requests from n_blocks input blocks.
+*
+* Parameters:
+*   - blocks:       pointer to input block data (size: n_blocks * BLOCK_SIZE)
+*   - n_blocks:     number of leaves (blocks) in the dataset
+*   - n_proofs:     total number of proof requests to generate
+*   - tamper_rate:  fraction [0.0, 1.0] of proofs that will be invalid (random data)
+*   - dist:         distribution strategy for assigning proofs to leaves 
+*                      (DIST_UNIFORM/DIST_ZIPF randomized across leaves)
+*   - zipf_s:       Zipf exponent (used only if dist == DIST_ZIPF). 
+*                   Typical values: 
+*                       - ~0.5 nearly uniform.
+*                       - 1.0 standard.
+*                       - 1.2-1.5 few 'hot' leaves.
+*                       - >= 2.0 highly concentrated on few leaves.
+*
+* Per-leaf counts sum exactly to n_proofs.
+* Proofs are emitted in increasing leaf order for good memory locality.
+*
+* Each proof is either valid (original data) or tampered (random data).
+* The 'expected' array stores ground truth for verification.
+*
+* Uses a fixed-seed RNG for reproducibility.
+*/
 ProofBatch* generate_proof_requests(const uint8_t* blocks, size_t n_blocks, size_t n_proofs, float tamper_rate, ProofDistribution dist, double zipf_s);
 
 /* Free ProofBatch */

@@ -155,13 +155,14 @@ uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs){
  * Parameters:
  *  - proof_batch: batch of Merkle proofs to verify
  *  - merkle_tree_gpu: GPU-resident Merkle tree used as reference
+ *  - out_elapsed: elapsed merkle proofs verification time.
  *
  * Returns:
  *  - Pointer to an array of boolean values of size n_proofs:
  *    true  -> proof is valid
  *    false -> proof is invalid
  */
-bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu){
+bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu, uint64_t* out_elapsed){
     
     size_t n_proofs = proof_batch->n_proofs;
     uint8_t* host_hashed_proofs = get_hashed_proofs(proof_batch, n_proofs);
@@ -173,6 +174,8 @@ bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_
     gpuErrchk(cudaMalloc((void**)&dev_proofs, n_proofs * SHA256_OUTPUT_BLOCK_SIZE));
     gpuErrchk(cudaMalloc((void**)&dev_leaf_index, n_proofs * sizeof(uint32_t)));
     gpuErrchk(cudaMalloc((void**)&dev_result, n_proofs * sizeof(bool)));
+
+    uint64_t initial_time = current_time_nsecs();
 
     gpuErrchk(cudaMemcpy(dev_proofs, host_hashed_proofs,
     n_proofs * SHA256_OUTPUT_BLOCK_SIZE, cudaMemcpyHostToDevice));
@@ -199,6 +202,10 @@ bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_
     bool* host_result = (bool*) malloc (n_proofs * sizeof(bool));
 
     gpuErrchk(cudaMemcpy(host_result, dev_result, n_proofs * sizeof(bool), cudaMemcpyDeviceToHost));
+
+    uint64_t end_time = current_time_nsecs();
+    if (out_elapsed)
+        *out_elapsed = end_time - initial_time;
 
     // free
     gpuErrchk(cudaFree(dev_proofs));

@@ -7,8 +7,7 @@
 
 #define THREADS_PER_BLOCK 256
 
-/* SHA-256 implementation selected merkle tree building and merkle proof execution.
-* The windowed variant (true) showed unstable benchmark behaviour. */
+/* SHA-256 implementation selected for merkle tree building and merkle proof execution. */
 constexpr bool SHA256_WINDOWED = false;
 
 /*

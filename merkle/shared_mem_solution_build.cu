@@ -289,14 +289,15 @@ __host__ size_t compute_top_band_offset(size_t base_band_offset, size_t base_ban
 *  - n_blocks: number of input data blocks (leaves)
 *  - host_data_bytes: pointer to input data (optional if generated internally)
 *  - leaves_per_block: optional number of leaves processed per block, it must be power of 2
-*                       (used only when MERKLE_TEST is enabled). 
+*                       (used only when MERKLE_TEST is enabled).
+*  - out_elapsed: elapsed merkle tree building time. 
 *
 * Returns:
 *  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
 *    The structure contains the device pointer to the tree and its metadata. The caller
 *    is responsible for freeing it.
 */
-MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, int leaves_per_block){ 
+MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, int leaves_per_block, uint64_t* out_elapsed){ 
 
     if (leaves_per_block <= 0 || ( (leaves_per_block & (leaves_per_block - 1)) != 0 )) {
         cout << "The parameter 'leaves_per_block' must be a power of two." << endl;
@@ -363,6 +364,10 @@ MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes,
         base_band_offset = compute_top_band_offset(base_band_offset, old_base_band_size, effective_leaves_per_block);
         base_band_write_offset = base_band_offset - (base_band_size + 1) / 2;
     }
+
+    uint64_t end_time = current_time_nsecs();
+    if (out_elapsed)
+        *out_elapsed = end_time - initial_time;
 
     // return the result
     MerkleTreeGPU* result = merkle_tree_gpu_create(dev_merkle_tree, merkle_tree_size, n_blocks);

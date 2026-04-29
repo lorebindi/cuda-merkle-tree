@@ -4,6 +4,8 @@
 #include <cstring>   
 #include <cstdio> 
 #include <time.h>
+#include <inttypes.h>
+#include <stdio.h>
 
 #include "../sha256/sha256_CPU.hpp"
 #include "../data/data_generator.hpp"
@@ -180,18 +182,21 @@ uint8_t* get_host_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs, bool s
  *  - proof_batch: batch of raw Merkle proofs and associated leaf indices
  *  - merkle_tree: CPU representation of the full Merkle tree
  *  - sha256_windowed: selects SHA-256 variant (windowed or standard)
+ *  - out_elapsed: elapsed merkle proof verification time.
  *
  * Returns:
  *  - Array of boolean values indicating whether each proof is valid.
  *    The caller is responsible for freeing the returned memory.
  */
-bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed){
+bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed, uint64_t* out_elapsed){
     
     size_t n_proofs = proof_batch->n_proofs;
     // merkle proof hashing
     uint8_t* hashed_proofs = get_host_hashed_proofs(proof_batch, n_proofs, sha256_windowed);
     // allocating results
     bool* results = (bool*) malloc(sizeof(bool) * n_proofs);
+
+    uint64_t initial_time = current_time_nsecs();
 
     for (size_t i = 0; i < n_proofs; i++) {
 
@@ -271,6 +276,10 @@ bool* host_compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeCPU* merkle_
             sibling_node = merkle_tree->host_tree + sibling_node_offset * SHA256_OUTPUT_BLOCK_SIZE;
         }
     }
+
+    uint64_t end_time = current_time_nsecs();
+    if(out_elapsed)
+        *out_elapsed = end_time - initial_time;
 
     free(hashed_proofs);
     return results;

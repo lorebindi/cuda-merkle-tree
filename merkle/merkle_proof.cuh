@@ -31,13 +31,14 @@ uint8_t* get_hashed_proofs(ProofBatch* proof_batch, size_t n_proofs, bool sha256
  *  - proof_batch: batch of Merkle proofs to verify
  *  - merkle_tree_gpu: GPU-resident Merkle tree used as reference
  *  - sha256_windowed: selects SHA-256 implementation variant
+ *  - out_elapsed: elapsed merkle proofs verification time.
  *
  * Returns:
  *  - Pointer to an array of boolean values of size n_proofs:
  *    true  -> proof is valid
  *    false -> proof is invalid
  */
-bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu);
+bool* compute_merkle_proofs(ProofBatch* proof_batch, MerkleTreeGPU* merkle_tree_gpu, uint64_t* out_elapsed=nullptr);
 
 /*
  * Verifies a batch of Merkle proofs on the CPU against a precomputed Merkle tree.

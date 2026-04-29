@@ -94,6 +94,14 @@ BenchResult collect_gpu(uint8_t* host_data, size_t n_blocks, bool windowed, int 
     return BenchResult::from_samples(samples);
 }
 
+/*
+ * Benchmarks SHA-256 hashing on CPU vs GPU across multiple input sizes.
+ *
+ * For each size, multiple runs are executed to measure execution time,
+ * variability, and relative performance difference between implementations.
+ *
+ * Results are printed to stdout and saved as a CSV file.
+ */
 void sha256_CPU_vs_GPU(int runs, bool sha256_windowed, const std::string& out_dir = "bench_output_files") {
 
     vector<size_t> sizes = {1024, 4096, 16384, 65536, 262144, 4194304, 8388608};
@@ -124,86 +132,130 @@ void sha256_CPU_vs_GPU(int runs, bool sha256_windowed, const std::string& out_di
     std::string mode = sha256_windowed ? "windowed" : "naive";
     BenchmarkTable table(
         "sha256_CPU_vs_GPU_" + mode,
-        {"size", "cpu_ns", "cpu_cv%", "gpu_ns", "gpu_cv%", "variation%"}
+        {"size", "cpu_ns", "cpu_stddev", "cpu_cv%", "gpu_ns", "gpu_stddev", "gpu_cv%", "variation%"}
     );
 
     for (size_t i = 0; i < sizes.size(); i++) {
         double variation = (static_cast<double>(cpu_results[i].mean) - gpu_results[i].mean)
                            / cpu_results[i].mean * 100.0;
-        std::ostringstream var, cpu_cv, gpu_cv;
+        std::ostringstream var, cpu_windowed_cv, gpu_windowed_cv, cpu_windowed_stddev, gpu_windowed_stddev;
         var    << std::fixed << std::setprecision(2) << variation;
-        cpu_cv << std::fixed << std::setprecision(2) << cpu_results[i].cv;
-        gpu_cv << std::fixed << std::setprecision(2) << gpu_results[i].cv;
+        cpu_windowed_cv << std::fixed << std::setprecision(2) << cpu_results[i].cv;
+        gpu_windowed_cv << std::fixed << std::setprecision(2) << gpu_results[i].cv;
+        cpu_windowed_stddev<< std::fixed << std::setprecision(2) << cpu_results[i].stddev;
+        gpu_windowed_stddev << std::fixed << std::setprecision(2) << gpu_results[i].stddev;
 
         table.add_row({
             std::to_string(sizes[i]),
             std::to_string(cpu_results[i].mean),
-            cpu_cv.str(),
+            cpu_windowed_stddev.str(),
+            cpu_windowed_cv.str(),
             std::to_string(gpu_results[i].mean),
-            gpu_cv.str(),
+            gpu_windowed_stddev.str(),
+            gpu_windowed_cv.str(),
             var.str()
         });
     }
 
-    table.print_stdout();
+    table.dump();
     for (auto* p : data_blocks_list) free(p);
 }
 
+/*
+ * Benchmarks GPU SHA-256 hashing comparing naive and windowed implementations.
+ *
+ * For each input size, multiple runs are executed to measure execution time,
+ * variability, and relative performance improvement of the windowed approach.
+ *
+ * Results are printed to stdout and saved as a CSV file.
+ */
 void sha256_GPU_naive_vs_windowed(int runs, const std::string& out_dir = "bench_output_files") {
 
-    vector<size_t> sizes = {1024, 4096, 16384, 65536, 262144, 4194304, 8388608, 33554432, 67108864};
+    vector<size_t> sizes = {1024, 4096, 16384, 65536,  262144 , 4194304, 8388608, 33554432, 67108864};
     vector<uint8_t*> data_blocks_list;
     for (size_t n : sizes)
         data_blocks_list.push_back(generate_random_blocks(n));
 
-    // GPU warmup
-    {
-        uint8_t *dev_data, *dev_hashed_data;
-        gpuErrchk(cudaMalloc((void**) &dev_data,        sizes[0] * SHA256_INPUT_BLOCK_SIZE));
-        gpuErrchk(cudaMalloc((void**) &dev_hashed_data, sizes[0] * SHA256_OUTPUT_BLOCK_SIZE));
-        sha256_gpu_array_benchmark(data_blocks_list[0], dev_data, dev_hashed_data, sizes[0], false);
-        gpuErrchk(cudaFree(dev_data));
-        gpuErrchk(cudaFree(dev_hashed_data));
-        cudaDeviceSynchronize();
-    }
-
     vector<BenchResult> naive_results(sizes.size());
     vector<BenchResult> windowed_results(sizes.size());
 
-    for (size_t i = 0; i < sizes.size(); i++)
-        naive_results[i]    = collect_gpu(data_blocks_list[i], sizes[i], false, runs);
+    for (size_t i = 0; i < sizes.size(); i++) {
+    
+        uint8_t* data = data_blocks_list[i];
 
-    for (size_t i = 0; i < sizes.size(); i++)
-        windowed_results[i] = collect_gpu(data_blocks_list[i], sizes[i], true,  runs);
-
+        cudaDeviceReset(); // clean state
+        collect_gpu(data, sizes[i], false, 3);  // warmup naive
+        naive_results[i] = collect_gpu(data, sizes[i], false, runs);
+        
+        cudaDeviceReset(); // clean state
+        collect_gpu(data, sizes[i], true,  3); // warmup naive
+        windowed_results[i] = collect_gpu(data, sizes[i], true, runs);
+        
+    }
+        
     BenchmarkTable table(
         "sha256_GPU_naive_vs_windowed",
-        {"size", "naive_ns", "naive_cv%", "windowed_ns", "windowed_cv%", "variation%"}
+        {"size", "gpu_naive_ns", "gpu_naive_stddev", "gpu_naive_cv%", "gpu_smem_ns", "gpu_smem_stddev", "gpu_smem_cv%", "variation%"}
     );
 
     for (size_t i = 0; i < sizes.size(); i++) {
         double variation = (static_cast<double>(naive_results[i].mean) - windowed_results[i].mean)
                            / naive_results[i].mean * 100.0;
-        std::ostringstream var, naive_cv, wind_cv;
+        std::ostringstream var, naive_cv, smem_cv, naive_std, smem_std;
         var      << std::fixed << std::setprecision(2) << variation;
         naive_cv << std::fixed << std::setprecision(2) << naive_results[i].cv;
-        wind_cv  << std::fixed << std::setprecision(2) << windowed_results[i].cv;
+        smem_cv  << std::fixed << std::setprecision(2) << windowed_results[i].cv;
+        naive_std << std::fixed << std::setprecision(2) << naive_results[i].stddev;
+        smem_std << std::fixed << std::setprecision(2) << windowed_results[i].stddev;
 
         table.add_row({
             std::to_string(sizes[i]),
             std::to_string(naive_results[i].mean),
+            naive_std.str(),
             naive_cv.str(),
             std::to_string(windowed_results[i].mean),
-            wind_cv.str(),
+            smem_std.str(),
+            smem_cv.str(),
             var.str()
         });
     }
 
-    table.print_stdout();
+    table.dump();
     for (auto* p : data_blocks_list) free(p);
 }
 
+/*
+ * This function is used for profiling the two sha256 implementations.
+ */
+void profiling_sha256_GPU(size_t n_blocks, bool windowed) {
+
+    uint8_t* host_data = generate_random_blocks(n_blocks);
+
+    uint8_t *dev_data, *dev_out;
+    gpuErrchk(cudaMalloc(&dev_data, n_blocks * SHA256_INPUT_BLOCK_SIZE));
+    gpuErrchk(cudaMalloc(&dev_out,  n_blocks * SHA256_OUTPUT_BLOCK_SIZE));
+
+    // transfer outside profiling
+    gpuErrchk(cudaMemcpy(dev_data, host_data,
+              n_blocks * SHA256_INPUT_BLOCK_SIZE, cudaMemcpyHostToDevice));
+
+    int bpg = (n_blocks + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+
+    // only kernel under profiling
+    if (windowed)
+        leaf_level_build<true><<<bpg, THREADS_PER_BLOCK>>>(n_blocks, 0, dev_data, dev_out);
+    else
+        leaf_level_build<false><<<bpg, THREADS_PER_BLOCK>>>(n_blocks, 0, dev_data, dev_out);
+    cudaDeviceSynchronize();
+
+    gpuErrchk(cudaFree(dev_data));
+    gpuErrchk(cudaFree(dev_out));
+    free(host_data);
+}
+
 int main() {
-    //sha256_CPU_vs_GPU(10, true);
-    sha256_GPU_naive_vs_windowed(20);
+    
+    sha256_CPU_vs_GPU(20, true);
+    //sha256_GPU_naive_vs_windowed(20);
+    //profiling_sha256_GPU(33554432, true);
 }

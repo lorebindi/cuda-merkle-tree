@@ -72,7 +72,7 @@ struct BenchmarkTable {
         cout << "[csv] scritto: " << filepath << "\n";
     }
 
-    void dump(const string& out_dir = ".") const {
+    void dump(const string& out_dir = "bench_output_files") const {
         print_stdout();
         string safe_title = title;
         for (char& c : safe_title)

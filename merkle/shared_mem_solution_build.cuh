@@ -27,17 +27,15 @@ __host__ int compute_optimal_leaves_per_block(int input_level_size, int threads_
 * containing the roots of the computed subtrees, until the final root is produced.
 *
 * Parameters:
-*  - n_blocks: number of input data blocks (leaves).
-*  - host_data_bytes: pointer to input data.
+*  - n_blocks: number of input data blocks (leaves)
+*  - host_data_bytes: pointer to input data (optional if generated internally)
 *  - leaves_per_block: optional number of leaves processed per block, it must be power of 2
-*                       (used only when MERKLE_TEST is enabled). 
+*                       (used only when MERKLE_TEST is enabled).
+*  - out_elapsed: elapsed merkle tree building time. 
 *
 * Returns:
 *  - A pointer to a MerkleTreeGPU structure representing the tree stored in GPU memory.
 *    The structure contains the device pointer to the tree and its metadata. The caller
 *    is responsible for freeing it.
 */
-MerkleTreeGPU* build_merkle_tree_SMEM(
-    size_t n_blocks, 
-    uint8_t* host_data_bytes, 
-    int leaves_per_block = -1);
+MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes, int leaves_per_block, uint64_t* out_elapsed=nullptr);
