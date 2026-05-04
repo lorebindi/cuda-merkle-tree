@@ -151,8 +151,6 @@ __global__ void internal_level_build_SMEM(uint8_t *base_band_GMEM, int base_band
         assert(parents_offset >= 0);
         parents_offset = (parents_offset - 1) >> 1; // Update to the left-most parent node of the next higher level
         active_thread = (tid < parent_level_size); // Update the status of active thread
-        
-        __syncthreads(); // barrier
 
     }
 
@@ -186,8 +184,6 @@ __global__ void internal_level_build_SMEM(uint8_t *base_band_GMEM, int base_band
             uint8_t *dst = dev_merkle_tree + (size_t)(gmem_lev_base_offset + block_offset + n) * SHA256_OUTPUT_BLOCK_SIZE;
             memcpy(dst, src, SHA256_OUTPUT_BLOCK_SIZE);
         }
-
-        __syncthreads(); // barrier
 
         // update offset to point at the next level to copy
         smem_offset = (smem_offset - 1) >> 1;
