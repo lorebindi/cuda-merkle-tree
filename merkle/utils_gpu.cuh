@@ -5,9 +5,9 @@
 #include <cstdint>
 #include "../sha256/sha256_GPU.cuh"
 
-#define THREADS_PER_BLOCK 256
+#define THREADS_PER_BLOCK 512
 
-/* SHA-256 implementation selected for merkle tree building and merkle proof execution. */
+/* SHA-256 implementation selected for GPU merkle tree building and merkle proof execution. */
 constexpr bool SHA256_WINDOWED = false;
 
 /*
@@ -30,15 +30,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line){
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 
-/* 
-* Returns the current time in nanoseconds since the Unix epoch.
-*/
-inline uint64_t current_time_nsecs(){
-    struct timespec t;
-    clock_gettime(CLOCK_REALTIME, &t);
-    return (t.tv_sec)*1000000000L + t.tv_nsec;
-}
-
 /*
 * Computes and return the total number of nodes required to store a complete Merkle tree
 * in a contiguous array representation (heap-like layout), given the number of leaf nodes.
@@ -50,7 +41,7 @@ inline uint64_t current_time_nsecs(){
 * Parameters:
 *  - n_leaf: number of leaf nodes in the Merkle tree.
 */
-__host__ __device__ __forceinline__ size_t compute_merkle_tree_size(size_t n_leaf){
+__device__ __forceinline__ size_t compute_merkle_tree_size(size_t n_leaf){
     size_t size = 0;
     while (n_leaf > 1) {     
         size += n_leaf;

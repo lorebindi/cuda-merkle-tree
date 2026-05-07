@@ -5,7 +5,8 @@
 
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
-#include "utils.cuh"
+#include "utils_gpu.cuh"
+#include "utils_cpu.hpp"
 #include "merkle_proof.cuh"
 
 /*

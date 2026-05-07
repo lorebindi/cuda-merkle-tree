@@ -1,10 +1,9 @@
 /*
-* This file contains the serial source code to:
+* This file contains the parallel (openmp) source code to:
 *   - build a merkle tree 
 *   - compute merkle proofs
 * on the CPU side
 */
-
 
 #include <cstdint>
 #include "merkle_tree.cuh"
@@ -29,10 +28,11 @@
 *  - host_data_bytes: pointer to input data in host memory
 *  - sha256_windowed: selects between SHA-256 implementation variants
 *  - out_elapsed: elapsed merkle tree building time.
+*  - out_num_threads: number of threads used by openmp
 *
 * Returns a pointer to a MerkleTreeCPU structure.
 */
-MerkleTreeCPU* host_build_merkle_tree_serial(size_t n_blocks, uint8_t* host_data_bytes, bool sha256_windowed, uint64_t* out_elapsed = nullptr);
+MerkleTreeCPU* host_build_merkle_tree_parallel(size_t n_blocks, uint8_t* host_data_bytes, bool sha256_windowed, uint64_t* out_elapsed = nullptr, int* out_num_threads = nullptr);
 
 /*
  * Verifies a batch of Merkle proofs on the CPU against a precomputed Merkle tree.
@@ -54,5 +54,6 @@ MerkleTreeCPU* host_build_merkle_tree_serial(size_t n_blocks, uint8_t* host_data
  * Returns:
  *  - Array of boolean values indicating whether each proof is valid.
  *    The caller is responsible for freeing the returned memory.
+ *  - out_num_threads: number of threads used by openmp
  */
-bool* host_compute_merkle_proofs_serial(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed, uint64_t* out_elapsed = nullptr);
+bool* host_compute_merkle_proofs_parallel(ProofBatch* proof_batch, MerkleTreeCPU* merkle_tree, bool sha256_windowed, uint64_t* out_elapsed = nullptr, int* out_num_threads = nullptr);

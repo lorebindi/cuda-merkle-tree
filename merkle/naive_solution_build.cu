@@ -5,7 +5,8 @@
 
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
-#include "utils.cuh"
+#include "utils_gpu.cuh"
+#include "utils_cpu.hpp"
 #include "merkle_tree.cuh"
 #include "naive_solution_build.cuh"
 
@@ -92,7 +93,7 @@ __global__ void internal_level_build_naive(int parent_level_size, uint8_t *paren
 MerkleTreeGPU* build_merkle_tree_naive(size_t n_blocks, uint8_t* host_data_bytes, uint64_t* out_elapsed){
  
     //computing the merkle_tree dimension
-    const size_t merkle_tree_size = compute_merkle_tree_size(n_blocks);
+    const size_t merkle_tree_size = host_compute_merkle_tree_size(n_blocks);
     size_t leaf_offset = merkle_tree_size - n_blocks;
   
     // set the working device

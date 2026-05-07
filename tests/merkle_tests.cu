@@ -9,12 +9,14 @@
 #include <cstring>
 #include <stdint.h>
 #include <vector>
+#include <assert.h>
 #include "../sha256/sha256_GPU.cuh"
 #include "../sha256/sha256_CPU.hpp"
-#include "../merkle/utils.cuh"
+#include "../merkle/utils_gpu.cuh"
 #include "../merkle/naive_solution_build.cuh"
 #include "../merkle/shared_mem_solution_build.cuh"
 #include "../merkle/merkle_tree_cpu.hpp"
+#include "../merkle/merkle_tree_cpu_openmp.hpp"
 #include "../merkle/merkle_proof.cuh"
 #include "../data/data_generator.hpp"
 
@@ -217,7 +219,8 @@ void compute_merkle_levels_layout(size_t n_leaves,
  *  2. Builds the Merkle tree on the GPU using the naive solution.
  *  3. Computes the SHA-256 hash of each leaf on the CPU.
  *  4. Compares the CPU-computed hashes with the GPU-computed leaf hashes.
- *  5. Computes the Merkle tree root on CPU level by level and compares with GPU root.
+ *  5. Computes the Merkle tree root on CPU (both serial and parallel) level 
+ *      by level and compares with GPU root.
  * 
  * Reports mismatches if any, otherwise confirms all leaf hashes and root match.
  */
@@ -331,7 +334,7 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, MerkleTestMode mo
     }
     else {
         // building the entire merkle tree on host side
-        MerkleTreeCPU* cpu_tree = host_build_merkle_tree(n_blocks, host_data, SHA256_WINDOWED);
+        MerkleTreeCPU* cpu_tree = host_build_merkle_tree_serial(n_blocks, host_data, SHA256_WINDOWED);
         
         // comparing the merkle tree computed in the host side with the one computed 
         // in gpu side
@@ -342,10 +345,27 @@ bool test_SMEM_solution(size_t n_blocks, int leaves_per_block, MerkleTestMode mo
         free(host_merkle_tree);
 
         if (all_match) {
-            cout << "Full tree MATCH\n" << endl;
+            cout << "Full tree MATCH (serial CPU) \n" << endl;
             outcome = true;
         } else {
-            cout << "Some nodes mismatch!\n" << endl;
+            cout << "Some nodes mismatch! (serial CPU)\n" << endl;
+            outcome = false;
+        }
+
+        // building the entire merkle tree on host side - parallel
+        MerkleTreeCPU* cpu_tree_parallel = host_build_merkle_tree_parallel(n_blocks, host_data, SHA256_WINDOWED);
+
+        bool parallel_match = memcmp(cpu_tree_parallel->host_tree, host_merkle_tree,
+                                merkle_tree_size * SHA256_OUTPUT_BLOCK_SIZE) == 0;
+
+        merkle_tree_cpu_destroy(cpu_tree_parallel);
+        free(host_merkle_tree);
+
+        if (parallel_match) {
+            cout << "Full tree MATCH (parallel CPU)\n" << endl;
+            outcome = true;
+        } else {
+            cout << "Some nodes mismatch! (parallel CPU)\n" << endl;
             outcome = false;
         }
     }
@@ -404,6 +424,11 @@ bool run_all_merkle_tests_SMEM(MerkleTestMode mode_small_size) {
     
 }
 
+/* 
+* Tests Merkle proof generation and verification on the GPU,
+* optionally validating the results against both serial and
+* parallel CPU implementations. 
+*/
 bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool smem, ProofDistribution distribution, double zipf_s, bool check_with_cpu){
 
     uint8_t* host_data_blocks = generate_random_blocks(n_blocks);
@@ -431,31 +456,34 @@ bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool
     bool* cpu_result = NULL;
 
     if (check_with_cpu) {
-        merkle_tree_cpu = host_build_merkle_tree(n_blocks, host_data_blocks, SHA256_WINDOWED);
-        cpu_result = host_compute_merkle_proofs(proof_batch, merkle_tree_cpu, SHA256_WINDOWED);
+        // serial check
+        merkle_tree_cpu = host_build_merkle_tree_serial(n_blocks, host_data_blocks, SHA256_WINDOWED);
+        cpu_result = host_compute_merkle_proofs_serial(proof_batch, merkle_tree_cpu, SHA256_WINDOWED);
 
-        int gpu_vs_expected = memcmp(proof_batch->expected, gpu_result, sizeof(bool) * n_proofs);
-        int cpu_vs_expected = memcmp(proof_batch->expected, cpu_result, sizeof(bool) * n_proofs);
+        int gpu_vs_expected      = memcmp(proof_batch->expected, gpu_result,  sizeof(bool) * n_proofs);
+        int cpu_ser_vs_expected  = memcmp(proof_batch->expected, cpu_result,  sizeof(bool) * n_proofs);
 
-        if(gpu_vs_expected == 0 && cpu_vs_expected == 0){
-                cout << "Merkle proof both in the GPU and CPU computed correctly" << endl;
-                outcome = true;
-                merkle_tree_cpu_destroy(merkle_tree_cpu);
-                free(cpu_result);
-            }
-        else{
-            
-            if(gpu_vs_expected != 0 && cpu_vs_expected == 0)
-                cout << "Some mistakes in the GPU computed merkle proof." << endl;
-            
-            if(gpu_vs_expected == 0 && cpu_vs_expected != 0)
-                cout << "Some mistakes in the CPU computed merkle proof." << endl;
-            
-            if(gpu_vs_expected != 0 && cpu_vs_expected != 0)
-                cout << "Some mistakes both in the GPU and CPU computed merkle proof." << endl;
-                
+        merkle_tree_cpu_destroy(merkle_tree_cpu);
+        free(cpu_result);
+
+        // parallel check
+        MerkleTreeCPU* merkle_tree_cpu_par = host_build_merkle_tree_parallel(n_blocks, host_data_blocks, SHA256_WINDOWED);
+        bool* cpu_result_par = host_compute_merkle_proofs_parallel(proof_batch, merkle_tree_cpu_par, SHA256_WINDOWED);
+
+        int cpu_par_vs_expected = memcmp(proof_batch->expected, cpu_result_par, sizeof(bool) * n_proofs);
+
+        merkle_tree_cpu_destroy(merkle_tree_cpu_par);
+        free(cpu_result_par);
+
+        // outcome evaluation
+        if (gpu_vs_expected == 0 && cpu_ser_vs_expected == 0 && cpu_par_vs_expected == 0) {
+            cout << "Merkle proof computed correctly on GPU, serial CPU and parallel CPU." << endl;
+            outcome = true;
+        } else {
+            if (gpu_vs_expected     != 0) cout << "Some mistakes in the GPU computed merkle proof." << endl;
+            if (cpu_ser_vs_expected != 0) cout << "Some mistakes in the serial CPU computed merkle proof." << endl;
+            if (cpu_par_vs_expected != 0) cout << "Some mistakes in the parallel CPU computed merkle proof." << endl;
             outcome = false;
-            
         }
     }
     else{
@@ -468,7 +496,6 @@ bool test_merkle_proof(size_t n_blocks, size_t n_proofs, float tamper_rate, bool
             outcome = false;
         }
     }
-
 
     free(host_data_blocks);
     free(gpu_result);
@@ -553,6 +580,20 @@ bool run_all_merkle_proof_tests(bool smem, ProofDistribution distribution, doubl
     }
 }
 
+/*void temp_openmp(size_t n_blocks){
+    // generate bytes of data.
+    cout << "Data blocks (leaves) number: " << n_blocks << "\n" << endl;
+    uint8_t* host_data = generate_random_blocks(n_blocks);
+   
+    // build the merkle tree on the CPU
+    MerkleTreeCPU* merkle_tree_cpu = host_build_merkle_tree_parallel(n_blocks, host_data, false);
+
+    assert(merkle_tree_cpu->base.size == n_blocks + n_blocks-1);
+
+    cout << "CPU Merkle Tree computed. \n" << endl;
+
+}*/
+
 int main() {
     srand(time(NULL));
 
@@ -579,10 +620,5 @@ int main() {
     cudaDeviceReset();
 
     return 0;
-
-    /*
-    ******************IMPORTANTE*************************+
-    Trovare il modo di testare 'host_compute_merkle_proofs' prima del testing delle prestazioni
-    */
 
 }

@@ -9,7 +9,7 @@
 #include <vector>
 #include "../sha256/sha256_GPU.cuh"
 #include "../sha256/sha256_CPU.hpp"
-#include "../merkle/utils.cuh"
+#include "../merkle/utils_gpu.cuh"
 #include "../data/data_generator.hpp"
 
 using namespace std;

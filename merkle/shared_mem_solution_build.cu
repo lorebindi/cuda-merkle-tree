@@ -3,13 +3,12 @@
 #include <cassert>
 #include "../sha256/sha256_GPU.cuh"
 #include "../data/data_generator.hpp"
-#include "utils.cuh"
+#include "utils_gpu.cuh"
+#include "utils_cpu.hpp"
 #include "merkle_tree.cuh"
 #include "shared_mem_solution_build.cuh"
 
 using namespace std;
-
-
 
 /*
 * GPU Ampere 30 (from cudaGetDeviceProp): 
@@ -18,7 +17,7 @@ using namespace std;
 *
 * Each node of the merkle tree is 32 byte, hence:
 *   - (48*1024)/32 = 1536 nodes in SMEM per block (at most).
-*   - (164*1024)/32 = 5248 nodes in SMEM per block (at most).
+*   - (164*1024)/32 = 5248 nodes in SMEM per SM (at most).
 *
 * Notes:
 *   - Obviously, it shouldn't be occupied the entire capacity of the SMEM because this limit the number 
@@ -212,7 +211,7 @@ __host__ int compute_optimal_leaves_per_block(int input_level_size, int threads_
     int best_occupancy = 0;
 
     for (int leaves_per_block = threads_per_block * 2; leaves_per_block <= input_level_size; leaves_per_block *= 2) {
-        size_t smem_needed = compute_merkle_tree_size(leaves_per_block) * SHA256_OUTPUT_BLOCK_SIZE;
+        size_t smem_needed = host_compute_merkle_tree_size(leaves_per_block) * SHA256_OUTPUT_BLOCK_SIZE;
         int active_blocks;
         cudaOccupancyMaxActiveBlocksPerMultiprocessor(
             &active_blocks,
@@ -301,7 +300,7 @@ MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes,
     }
    
     //computing the merkle_tree dimension
-    const size_t merkle_tree_size = compute_merkle_tree_size(n_blocks);
+    const size_t merkle_tree_size = host_compute_merkle_tree_size(n_blocks);
     size_t leaf_offset = merkle_tree_size - n_blocks;
   
     // set the working device
@@ -347,7 +346,7 @@ MerkleTreeGPU* build_merkle_tree_SMEM(size_t n_blocks, uint8_t* host_data_bytes,
         }
 
         // compute the dimension of the SMEM that will be used
-        size_t size_SMEM = (compute_merkle_tree_size(effective_leaves_per_block) - effective_leaves_per_block) * SHA256_OUTPUT_BLOCK_SIZE;
+        size_t size_SMEM = (host_compute_merkle_tree_size(effective_leaves_per_block) - effective_leaves_per_block) * SHA256_OUTPUT_BLOCK_SIZE;
         // computing the band of the merkle tree through the kernel
         internal_level_build_SMEM<<<blocks_per_grid, THREADS_PER_BLOCK, size_SMEM>>>(
             base_band, base_band_size, (int)base_band_write_offset, dev_merkle_tree, effective_leaves_per_block);

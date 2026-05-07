@@ -21,7 +21,8 @@
 #include <iomanip>
 #include <cmath>
 #include "../data/data_generator.hpp"
-#include "../merkle/utils.cuh"
+#include "../merkle/utils_cpu.hpp"
+#include "../merkle/utils_gpu.cuh"
 #include "../sha256/sha256_CPU.hpp"
 #include "bench_utils.hpp"
 
