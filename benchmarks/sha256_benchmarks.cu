@@ -110,25 +110,17 @@ void sha256_CPU_vs_GPU(int runs, bool sha256_windowed, const std::string& out_di
     for (size_t n : sizes)
         data_blocks_list.push_back(generate_random_blocks(n));
 
-    // GPU warmup
-    {
-        uint8_t *dev_data, *dev_hashed_data;
-        gpuErrchk(cudaMalloc((void**) &dev_data,        sizes[0] * SHA256_INPUT_BLOCK_SIZE));
-        gpuErrchk(cudaMalloc((void**) &dev_hashed_data, sizes[0] * SHA256_OUTPUT_BLOCK_SIZE));
-        sha256_gpu_array_benchmark(data_blocks_list[0], dev_data, dev_hashed_data, sizes[0], sha256_windowed);
-        gpuErrchk(cudaFree(dev_data));
-        gpuErrchk(cudaFree(dev_hashed_data));
-        cudaDeviceSynchronize();
-    }
-
     vector<BenchResult> cpu_results(sizes.size());
     vector<BenchResult> gpu_results(sizes.size());
 
     for (size_t i = 0; i < sizes.size(); i++)
         cpu_results[i] = collect_cpu(data_blocks_list[i], sizes[i], sha256_windowed, runs);
 
-    for (size_t i = 0; i < sizes.size(); i++)
+    for (size_t i = 0; i < sizes.size(); i++) {
+        collect_gpu(data_blocks_list[i], sizes[i], false, 3);  // GPU warmup
         gpu_results[i] = collect_gpu(data_blocks_list[i], sizes[i], sha256_windowed, runs);
+    }
+        
 
     std::string mode = sha256_windowed ? "windowed" : "naive";
     BenchmarkTable table(
@@ -184,19 +176,17 @@ void sha256_GPU_naive_vs_windowed(int runs, const std::string& out_dir = "bench_
     
         uint8_t* data = data_blocks_list[i];
 
-        cudaDeviceReset(); // clean state
         collect_gpu(data, sizes[i], false, 3);  // warmup naive
         naive_results[i] = collect_gpu(data, sizes[i], false, runs);
         
-        cudaDeviceReset(); // clean state
-        collect_gpu(data, sizes[i], true,  3); // warmup naive
+        collect_gpu(data, sizes[i], true,  3); // warmup windowed
         windowed_results[i] = collect_gpu(data, sizes[i], true, runs);
         
     }
         
     BenchmarkTable table(
         "sha256_GPU_naive_vs_windowed",
-        {"size", "gpu_naive_ns", "gpu_naive_stddev", "gpu_naive_cv%", "gpu_smem_ns", "gpu_smem_stddev", "gpu_smem_cv%", "variation%"}
+        {"size", "gpu_naive_ns", "gpu_naive_stddev", "gpu_naive_cv%", "gpu_windowed_ns", "gpu_windowed_stddev", "gpu_windowed_cv%", "variation%"}
     );
 
     for (size_t i = 0; i < sizes.size(); i++) {
@@ -256,7 +246,7 @@ void profiling_sha256_GPU(size_t n_blocks, bool windowed) {
 
 int main() {
     
-    sha256_CPU_vs_GPU(20, true);
-    //sha256_GPU_naive_vs_windowed(20);
+    //sha256_CPU_vs_GPU(20, false);
+    sha256_GPU_naive_vs_windowed(20);
     //profiling_sha256_GPU(33554432, true);
 }

@@ -131,8 +131,9 @@ __device__  __forceinline__ void sha256_transform(CUDA_SHA256_CTX *ctx, const ui
     uint32_t a, b, c, d, e, f, g, h, i, j, t1, t2, m[64];
 
     /* Initialize the first 16 words (m[0..15]) of the message schedule array. */
-	for (i = 0, j = 0; i < 16; i++, j += 4)
-		m[i] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | (data[j + 3]);
+	const uint32_t* data32 = (const uint32_t*)data;
+	for (i = 0; i < 16; i++)
+		m[i] = __byte_perm(data32[i], 0, 0x0123); // Load message word m[i] from the input block (preserve original byte order)
     /* Extend the first 16 words into the remaining 48 words of the message schedule (m[16..63]) */
 	for ( ; i < 64; i++)
 		m[i] = Small_sigma1(m[i - 2]) + m[i - 7] + Small_sigma0(m[i - 15]) + m[i - 16];
@@ -199,11 +200,13 @@ __device__  __forceinline__ void sha256_transform_windowed(CUDA_SHA256_CTX *ctx,
 
 	int i = 0;
 
+	const uint32_t* data32 = (const uint32_t*)data;
+
 	for (; i < 16; i++) {
         int idx = i & 15;
 		// Computing messagge schedule
-		int j = i * 4;
-        m[idx] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | (data[j + 3]);
+		j = i * 4;
+        m[idx] = __byte_perm(data32[i], 0, 0x0123); // Load message word m[i] from the input block (preserve original byte order)
 
 		// Compression function
         uint32_t t1 = h + Big_sigma1(e) + Ch(e, f, g) + k[i] + m[idx];
@@ -271,16 +274,9 @@ __device__ __forceinline__ void sha256_single_block(const uint8_t input[SHA256_I
 
     /* Since GPU NVIDIA use little endian uint8_t ordering and SHA uses big endian,
 	 reverse all the uint8_ts when copying the final hash to the output hash. */
-    for(int i=0;i<4;i++){
-        output[i]      = (ctx.hash[0] >> (24-i*8)) & 0xff;
-        output[i+4]    = (ctx.hash[1] >> (24-i*8)) & 0xff;
-        output[i+8]    = (ctx.hash[2] >> (24-i*8)) & 0xff;
-        output[i+12]   = (ctx.hash[3] >> (24-i*8)) & 0xff;
-        output[i+16]   = (ctx.hash[4] >> (24-i*8)) & 0xff;
-        output[i+20]   = (ctx.hash[5] >> (24-i*8)) & 0xff;
-        output[i+24]   = (ctx.hash[6] >> (24-i*8)) & 0xff;
-        output[i+28]   = (ctx.hash[7] >> (24-i*8)) & 0xff;
-    }
+	uint32_t* out32 = (uint32_t*)output;
+    for (int i = 0; i < 8; i++)
+        out32[i] = __byte_perm(ctx.hash[i], 0, 0x0123);
 }
 
 #endif // SHA256_GPU_H

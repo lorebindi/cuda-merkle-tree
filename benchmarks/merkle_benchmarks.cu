@@ -52,7 +52,7 @@ using namespace std;
 void build_merkle_tree_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_output_files"){
 
     // preparing data to hash
-    vector<size_t> leaf_lev_sizes = {1024, 4096, 16384, 65536, 262144, 4194304, 8388608};
+    vector<size_t> leaf_lev_sizes = {/*4096,*/ 16384, 65536, 131072, 262144, 1048576, 4194304, 8388608};
     vector<uint8_t*> data_blocks_list;
 
     for (size_t n_blocks : leaf_lev_sizes) {
@@ -60,25 +60,31 @@ void build_merkle_tree_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_
         data_blocks_list.push_back(data_blocks);
     }
 
-    // GPU warmup
-    {
-        uint64_t dummy = 0;
-        MerkleTreeGPU* t = build_merkle_tree_naive(leaf_lev_sizes[0], data_blocks_list[0], &dummy);
-        cudaDeviceSynchronize();
-        merkle_tree_gpu_destroy(t);
-    }
-
-    // CPU parallel warmup
-    int omp_threads_used = 0;
-    {
-        MerkleTreeCPU* t = host_build_merkle_tree_parallel(leaf_lev_sizes[0], data_blocks_list[0], SHA256_WINDOWED, nullptr, &omp_threads_used);
-        merkle_tree_cpu_destroy(t);
-    }
-
     // preparing for storing results
     vector<BenchResult> cpu_serial_results(leaf_lev_sizes.size());
     vector<BenchResult> cpu_parallel_results(leaf_lev_sizes.size());
     vector<BenchResult> gpu_results(leaf_lev_sizes.size());
+
+    //gpu collecting results
+    for(size_t i = 0; i < leaf_lev_sizes.size(); i++) {
+
+        // GPU warmup 
+        {
+            uint64_t dummy = 0;
+            MerkleTreeGPU* t = build_merkle_tree_naive(leaf_lev_sizes[i], data_blocks_list[i], &dummy);
+            cudaDeviceSynchronize();
+            merkle_tree_gpu_destroy(t);
+        }
+
+        vector<uint64_t> samples(runs);
+        for (int r = 0; r < runs; r++) {
+            uint64_t elapsed = 0;
+            MerkleTreeGPU *merkle_tree_gpu = build_merkle_tree_naive(leaf_lev_sizes[i], data_blocks_list[i], &elapsed);
+            merkle_tree_gpu_destroy(merkle_tree_gpu);
+            samples[r] = elapsed;
+        }
+        gpu_results[i] = BenchResult::from_samples(samples);
+    }
 
     // cpu serial collecting results
     for(size_t i = 0; i < leaf_lev_sizes.size(); i++) {
@@ -92,8 +98,20 @@ void build_merkle_tree_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_
         cpu_serial_results[i] = BenchResult::from_samples(samples);
     }
 
+    // CPU parallel warmup
+    int omp_threads_used = 0;
+
     // cpu parallel collecting results
     for(size_t i = 0; i < leaf_lev_sizes.size(); i++) {
+
+        // warmup per questo size specifico
+        {
+            MerkleTreeCPU* t = host_build_merkle_tree_parallel(
+                leaf_lev_sizes[i], data_blocks_list[i],
+                SHA256_WINDOWED, nullptr, nullptr);
+            merkle_tree_cpu_destroy(t);
+        }
+
         vector<uint64_t> samples(runs);
         for (int r = 0; r < runs; r++) {
             uint64_t elapsed = 0;
@@ -104,19 +122,6 @@ void build_merkle_tree_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_
             samples[r] = elapsed;
         }
         cpu_parallel_results[i] = BenchResult::from_samples(samples);
-    }
-
-    //gpu collecting results
-    for(size_t i = 0; i < leaf_lev_sizes.size(); i++) {
-        cudaDeviceReset();
-        vector<uint64_t> samples(runs);
-        for (int r = 0; r < runs; r++) {
-            uint64_t elapsed = 0;
-            MerkleTreeGPU *merkle_tree_gpu = build_merkle_tree_naive(leaf_lev_sizes[i], data_blocks_list[i], &elapsed);
-            merkle_tree_gpu_destroy(merkle_tree_gpu);
-            samples[r] = elapsed;
-        }
-        gpu_results[i] = BenchResult::from_samples(samples);
     }
 
     BenchmarkTable table(
@@ -147,7 +152,7 @@ void build_merkle_tree_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_
         });
     }
 
-    table.print_stdout();
+    table.dump();
     for (auto* p : data_blocks_list) free(p);
 }
 
@@ -265,16 +270,15 @@ void build_merkle_tree_GPU_smem_leaves_per_block(int runs, int n_leaves, const s
 
     // collecting results
     for(size_t i = 0; i < leaves_per_block_sizes.size(); i++) {
-        cudaDeviceReset();
-
-        // warmup
-        { uint64_t dummy = 0; auto* t = build_merkle_tree_SMEM(n_leaves, data_blocks, leaves_per_block_sizes[i], &dummy); merkle_tree_gpu_destroy(t); }
-        { uint64_t dummy = 0; auto* t = build_merkle_tree_SMEM(n_leaves, data_blocks, leaves_per_block_sizes[i], &dummy); merkle_tree_gpu_destroy(t); }
-        { uint64_t dummy = 0; auto* t = build_merkle_tree_SMEM(n_leaves, data_blocks, leaves_per_block_sizes[i], &dummy); merkle_tree_gpu_destroy(t); }
-        cudaDeviceSynchronize();
+        cudaDeviceReset();        
 
         vector<uint64_t> smem_samples(runs);
         for (int r = 0; r < runs; r++) {
+
+            if(r == 0) {
+                uint64_t dummy = 0; auto* t = build_merkle_tree_SMEM(n_leaves, data_blocks, leaves_per_block_sizes[i], &dummy); merkle_tree_gpu_destroy(t);
+            }
+
             uint64_t elapsed = 0;
             auto* t = build_merkle_tree_SMEM(n_leaves, data_blocks, leaves_per_block_sizes[i], &elapsed);
             merkle_tree_gpu_destroy(t);
@@ -318,7 +322,7 @@ void build_merkle_tree_GPU_smem_leaves_per_block(int runs, int n_leaves, const s
 void merkle_proof_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_output_files"){
 
     // preparing data to hash
-    vector<size_t> leaf_lev_sizes = {1024, 4096, 16384, 65536, 262144, 1048576 /*, 4194304, 8388608, 33554432*/};
+    vector<size_t> leaf_lev_sizes = {1024, 4096, 16384, 65536, 262144, 1048576/*, 4194304, 8388608, 33554432*/};
     vector<uint8_t*> data_blocks_list;
 
     for (size_t n_blocks : leaf_lev_sizes) {
@@ -354,7 +358,6 @@ void merkle_proof_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_outpu
             bool* result = compute_merkle_proofs(proof_batch, merkle_tree_gpu, &dummy);
             free(result);
         }
-        cudaDeviceSynchronize();
 
         // GPU benchmark
         vector<uint64_t> gpu_samples(runs);
@@ -367,6 +370,7 @@ void merkle_proof_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_outpu
         }
         gpu_results[i] = BenchResult::from_samples(gpu_samples);
         
+        cout << "GPU finita" << endl;
         
         // CPU serial benchmark
         vector<uint64_t> cpu_samples(runs);
@@ -378,6 +382,8 @@ void merkle_proof_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_outpu
             free(result);
         }
         cpu_serial_results[i] = BenchResult::from_samples(cpu_samples);
+
+        cout << "CPU seriale finita" << endl;
 
         // CPU parallel warmup
         {
@@ -397,10 +403,13 @@ void merkle_proof_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_outpu
         }
         cpu_parallel_results[i] = BenchResult::from_samples(cpu_parallel_samples);
 
+        cout << "CPU parallela finita" << endl;
+
         merkle_tree_cpu_destroy(merkle_tree_cpu);
         merkle_tree_gpu_destroy(merkle_tree_gpu);
         free_proof_batch(proof_batch);
 
+        cout << "######### Size: " << leaf_lev_sizes[i] << " finita. ###########" << endl;
     }
 
     BenchmarkTable table(
@@ -439,8 +448,30 @@ void merkle_proof_CPU_vs_GPU(int runs, const std::string& out_dir = "bench_outpu
 
 }
 
+uint64_t profiling_merkle_build_naive_GPU(size_t n_leaves) {
+    uint8_t* data_blocks = generate_random_blocks(n_leaves);
+    uint64_t elapsed = 0;
+
+    auto* t = build_merkle_tree_naive(n_leaves, data_blocks, &elapsed);
+    merkle_tree_gpu_destroy(t);
+
+    free(data_blocks);
+    return elapsed;
+}
+
+uint64_t profiling_merkle_build_SMEM_GPU(size_t n_leaves, int leaves_per_block) {
+    uint8_t* data_blocks = generate_random_blocks(n_leaves);
+    uint64_t elapsed = 0;
+
+    auto* t = build_merkle_tree_SMEM(n_leaves, data_blocks, leaves_per_block, &elapsed);
+    merkle_tree_gpu_destroy(t);
+
+    free(data_blocks);
+    return elapsed;
+}
+
 int main() {
-    build_merkle_tree_CPU_vs_GPU(20);
+    //build_merkle_tree_CPU_vs_GPU(20);
     //build_merkle_tree_GPU_naive_vs_smem(20,256); // to do both with default sha256 and windowed
 
     //build_merkle_tree_GPU_smem_leaves_per_block(20, 65536); // 2^16 merkle tree leaves -> 2^16 + 2^16-1 merkle tree nodes
@@ -449,5 +480,8 @@ int main() {
     //build_merkle_tree_GPU_smem_leaves_per_block(20, 8388608); // 2^23 merkle tree leaves -> 2^23 + 2^23-1 merkle tree nodes
     //build_merkle_tree_GPU_smem_leaves_per_block(20, 33554432); // 2^25 merkle tree leaves -> 2^25 + 2^25-1 merkle tree nodes
 
-    //merkle_proof_CPU_vs_GPU(20);
+    merkle_proof_CPU_vs_GPU(20);
+
+    //uint64_t elapsed = profiling_merkle_build_naive_GPU(4194304);
+    //uint64_t elapsed = profiling_merkle_build_SMEM_GPU(4194304, 256);
 }
