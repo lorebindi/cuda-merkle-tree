@@ -5,7 +5,7 @@
 #include <cstdint>
 #include "../sha256/sha256_GPU.cuh"
 
-#define THREADS_PER_BLOCK 512
+#define THREADS_PER_BLOCK 256
 
 /* SHA-256 implementation selected for GPU merkle tree building and merkle proof execution. */
 constexpr bool SHA256_WINDOWED = false;
